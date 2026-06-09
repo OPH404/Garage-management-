@@ -1,4 +1,4 @@
-# 🔧 Complete Garage Management System
+# 🔧 Complete Bike Garage Management System
 
 A comprehensive, professional-grade garage management system built with Python and Tkinter. This system handles all aspects of running a bike service garage including customer management, inventory control, service tracking, billing, and financial reporting.
 
