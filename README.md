@@ -1,2 +1,3 @@
 # Garage-management-
-A garage management system with SQL Database
+A Bike garage management system with SQL Database
+Made with python and SQL lite
