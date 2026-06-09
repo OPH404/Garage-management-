@@ -1,0 +1,14 @@
+# Garage Management System - Required Packages
+# Install with: pip install -r requirements.txt
+
+# PDF Generation (Required for invoices)
+reportlab>=3.6.0
+
+# Image Processing (Required for logo support)
+Pillow>=9.0.0
+
+# Note: tkinter and sqlite3 come with Python by default
+# If tkinter is missing on Linux, install:
+#   Ubuntu/Debian: sudo apt-get install python3-tk
+#   Fedora/RHEL: sudo dnf install python3-tkinter
+#LOVE VIBE CODE PEACE BY OPH
