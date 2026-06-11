@@ -345,11 +345,12 @@ class GarageApp:
         alert_frame = tk.Frame(tab, bg='#ffe5e5', relief='raised', bd=2)
         alert_frame.pack(fill='x', padx=20, pady=5)
         
-        tk.Label(alert_frame, text="Low Stock Alerts", font=("Arial", 12, "bold"),
+        tk.Label(alert_frame, text="Alerts & Reminders", font=("Arial", 12, "bold"),
                 bg='#ffe5e5', fg='#c0392b').pack(pady=5)
         
-        self.alert_text = tk.Text(alert_frame, height=3, bg='#ffe5e5', font=("Arial", 10))
+        self.alert_text = tk.Text(alert_frame, height=4, bg='#ffe5e5', font=("Arial", 10))
         self.alert_text.pack(fill='x', padx=10, pady=5)
+        self.alert_text.tag_configure("alert_header", font=("Arial", 10, "bold"), foreground="#c0392b")
         
         tk.Button(tab, text="Refresh Dashboard", command=self.update_dashboard,
                  bg='#3498db', fg='white', font=("Arial", 11, "bold"), cursor='hand2').pack(pady=10)
@@ -360,12 +361,20 @@ class GarageApp:
         income = self.db.fetchone("SELECT SUM(paid) FROM payments")[0] or 0
         expenses = self.db.fetchone("SELECT SUM(amount) FROM expenses")[0] or 0
         profit = income - expenses
-        pending = self.db.fetchone("SELECT SUM(balance) FROM payments WHERE balance > 0")[0] or 0
+        pending = self.db.fetchone("""
+            SELECT SUM(balance) FROM payments 
+            WHERE service_id IN (SELECT id FROM services WHERE status='Completed') AND balance > 0
+        """)[0] or 0
+        
+        # Today's stats
+        today_income = self.db.fetchone("SELECT COALESCE(SUM(paid),0) FROM payments WHERE date=?", (self.today,))[0]
+        today_services = self.db.fetchone("SELECT COUNT(*) FROM services WHERE date=?", (self.today,))[0]
+        today_expenses = self.db.fetchone("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE date=?", (self.today,))[0]
         
         self.income_label.config(text=f"Total Income\n{self.CURRENCY} {income:,.2f}")
         self.expense_label.config(text=f"Total Expenses\n{self.CURRENCY} {expenses:,.2f}")
         self.profit_label.config(text=f"Net Profit\n{self.CURRENCY} {profit:,.2f}")
-        self.pending_label.config(text=f"Pending\n{self.CURRENCY} {pending:,.2f}")
+        self.pending_label.config(text=f"Outstanding\n{self.CURRENCY} {pending:,.2f}")
         
         # Service count cards
         pending_count = self.db.fetchone("SELECT COUNT(*) FROM services WHERE status='Pending'")[0]
@@ -373,10 +382,10 @@ class GarageApp:
         completed_count = self.db.fetchone("SELECT COUNT(*) FROM services WHERE status='Completed'")[0]
         customer_count = self.db.fetchone("SELECT COUNT(*) FROM customers")[0]
         
-        self.pending_svc_label.config(text=f"Pending Services\n{pending_count}")
+        self.pending_svc_label.config(text=f"Today: {today_services} Services\n{self.CURRENCY} {today_income:,.0f} Income")
         self.inprogress_svc_label.config(text=f"In Progress\n{inprogress_count}")
-        self.completed_svc_label.config(text=f"Completed\n{completed_count}")
-        self.customers_count_label.config(text=f"Total Customers\n{customer_count}")
+        self.completed_svc_label.config(text=f"Pending Services\n{pending_count}")
+        self.customers_count_label.config(text=f"Unpaid Dues\n{self.CURRENCY} {pending:,.0f}")
         
         for row in self.recent_services_tree.get_children():
             self.recent_services_tree.delete(row)
@@ -396,11 +405,38 @@ class GarageApp:
         self.alert_text.delete(1.0, tk.END)
         low_stock = self.db.fetchall("SELECT name, quantity, min_stock FROM parts WHERE quantity <= min_stock")
         
+        has_alerts = False
+        
+        # Low stock alerts
         if low_stock:
+            has_alerts = True
+            self.alert_text.insert(tk.END, "LOW STOCK:\n", "alert_header")
             for part in low_stock:
                 self.alert_text.insert(tk.END, f"  {part[0]}: {part[1]} units (Min: {part[2]})\n")
-        else:
-            self.alert_text.insert(tk.END, "All parts adequately stocked!")
+        
+        # Overdue payments (unpaid completed services older than 7 days)
+        overdue = self.db.fetchall("""
+            SELECT s.id, COALESCE(c.name, '?'), (s.labour + COALESCE((SELECT SUM(qty*price) FROM service_parts WHERE service_id=s.id), 0)) - COALESCE((SELECT SUM(paid) FROM payments WHERE service_id=s.id), 0)
+            FROM services s LEFT JOIN customers c ON s.customer_id=c.id
+            WHERE s.status='Completed' AND s.date < date('now', '-7 days')
+            AND ((s.labour + COALESCE((SELECT SUM(qty*price) FROM service_parts WHERE service_id=s.id), 0)) - COALESCE((SELECT SUM(paid) FROM payments WHERE service_id=s.id), 0)) > 0
+        """)
+        if overdue:
+            has_alerts = True
+            self.alert_text.insert(tk.END, "\nOVERDUE PAYMENTS (>7 days):\n", "alert_header")
+            for o in overdue:
+                self.alert_text.insert(tk.END, f"  #{o[0]} {o[1]}: {self.CURRENCY} {o[2]:,.2f} due\n")
+        
+        # Upcoming service reminders
+        upcoming = self.db.fetchall("SELECT b.bike_number, b.next_service_date, COALESCE(c.name,'?') FROM bikes b LEFT JOIN customers c ON b.customer_id=c.id WHERE b.next_service_date <= date('now', '+7 days') AND b.next_service_date >= date('now')")
+        if upcoming:
+            has_alerts = True
+            self.alert_text.insert(tk.END, "\nUPCOMING SERVICES (within 7 days):\n", "alert_header")
+            for u in upcoming:
+                self.alert_text.insert(tk.END, f"  {u[2]} - {u[0]}: Due {u[1]}\n")
+        
+        if not has_alerts:
+            self.alert_text.insert(tk.END, "No alerts - everything looks good!")
 
     
     # ========== CUSTOMERS TAB ==========
@@ -471,7 +507,86 @@ class GarageApp:
         self.customer_table.pack(fill='both', expand=True)
         self.customer_table.bind('<Double-1>', self.load_customer_data)
         
+        # Right-click context menu for customer history
+        self.customer_menu = tk.Menu(self.customer_table, tearoff=0)
+        self.customer_menu.add_command(label="View Service History", command=self.view_customer_history)
+        self.customer_table.bind('<Button-3>', lambda e: self._show_customer_menu(e))
+        
         self.refresh_customers_table()
+    
+    def _show_customer_menu(self, event):
+        """Show right-click context menu for customers"""
+        item = self.customer_table.identify_row(event.y)
+        if item:
+            self.customer_table.selection_set(item)
+            self.customer_menu.post(event.x_root, event.y_root)
+    
+    def view_customer_history(self):
+        """View all services for the selected customer"""
+        selected = self.customer_table.selection()
+        if not selected:
+            messagebox.showerror("Error", "Select a customer!")
+            return
+        
+        cid = self.customer_table.item(selected[0])['values'][0]
+        cname = self.customer_table.item(selected[0])['values'][1]
+        
+        history_win = tk.Toplevel(self.master)
+        history_win.title(f"Service History - {cname}")
+        history_win.geometry("900x500")
+        history_win.grab_set()
+        
+        tk.Label(history_win, text=f"📋 Service History: {cname}", font=("Arial", 16, "bold"),
+                bg='#3498db', fg='white').pack(fill='x', pady=10)
+        
+        # Customer summary
+        summary = self.db.fetchone("""
+            SELECT COUNT(*), COALESCE(SUM(s.labour + COALESCE((SELECT SUM(qty*price) FROM service_parts WHERE service_id=s.id), 0)), 0),
+                   COALESCE((SELECT SUM(paid) FROM payments WHERE service_id IN (SELECT id FROM services WHERE customer_id=?)), 0)
+            FROM services s WHERE s.customer_id=?
+        """, (cid, cid))
+        
+        info_frame = tk.Frame(history_win, bg='#f0f0f0', padx=15, pady=10)
+        info_frame.pack(fill='x', padx=20, pady=5)
+        tk.Label(info_frame, text=f"Total Services: {summary[0]}  |  Total Billed: {self.CURRENCY} {summary[1]:,.2f}  |  Total Paid: {self.CURRENCY} {summary[2]:,.2f}  |  Balance: {self.CURRENCY} {summary[1]-summary[2]:,.2f}",
+                bg='#f0f0f0', font=("Arial", 11, "bold")).pack()
+        
+        # Service history table
+        tree_frame = tk.Frame(history_win)
+        tree_frame.pack(fill='both', expand=True, padx=20, pady=10)
+        
+        scroll = tk.Scrollbar(tree_frame)
+        scroll.pack(side='right', fill='y')
+        
+        tree = ttk.Treeview(tree_frame, columns=("ID", "Date", "Bike", "Problem", "Status", "Total", "Paid", "Balance"),
+                           show='headings', yscrollcommand=scroll.set)
+        scroll.config(command=tree.yview)
+        
+        for col, w in [("ID", 50), ("Date", 90), ("Bike", 100), ("Problem", 200), ("Status", 100), ("Total", 90), ("Paid", 90), ("Balance", 90)]:
+            tree.heading(col, text=col)
+            tree.column(col, width=w)
+        
+        tree.pack(fill='both', expand=True)
+        
+        services = self.db.fetchall("""
+            SELECT s.id, s.date, COALESCE(b.bike_number, '?'), s.problem, s.status,
+                   (s.labour + COALESCE((SELECT SUM(qty*price) FROM service_parts WHERE service_id=s.id), 0)),
+                   COALESCE((SELECT SUM(paid) FROM payments WHERE service_id=s.id), 0),
+                   (s.labour + COALESCE((SELECT SUM(qty*price) FROM service_parts WHERE service_id=s.id), 0) 
+                    - COALESCE((SELECT SUM(paid) FROM payments WHERE service_id=s.id), 0))
+            FROM services s LEFT JOIN bikes b ON s.bike_id=b.id
+            WHERE s.customer_id=?
+            ORDER BY s.date DESC
+        """, (cid,))
+        
+        for svc in services:
+            tree.insert("", tk.END, values=(
+                svc[0], svc[1], svc[2], svc[3][:30], svc[4],
+                f"{self.CURRENCY} {svc[5]:,.2f}", f"{self.CURRENCY} {svc[6]:,.2f}", f"{self.CURRENCY} {svc[7]:,.2f}"
+            ))
+        
+        tk.Button(history_win, text="Close", command=history_win.destroy,
+                 bg='#95a5a6', fg='white', font=("Arial", 11, "bold"), width=15).pack(pady=10)
     
     def add_customer(self):
         name, phone = self.c_name.get().strip(), self.c_phone.get().strip()
@@ -600,6 +715,16 @@ class GarageApp:
             tk.Button(btn_frame, text=text, command=cmd, bg=color, fg='white',
                      font=("Arial", 10, "bold"), width=15, cursor='hand2').pack(side='left', padx=5)
         
+        # Search bar for bikes
+        bike_search_frame = tk.Frame(tab, bg='white')
+        bike_search_frame.pack(fill='x', padx=20, pady=2)
+        tk.Label(bike_search_frame, text="Search:", bg='white', font=("Arial", 10)).pack(side='left', padx=5)
+        self.bike_search = tk.Entry(bike_search_frame, font=("Arial", 10), width=30)
+        self.bike_search.pack(side='left', padx=5)
+        self.bike_search.bind('<KeyRelease>', lambda e: self.refresh_bikes_table())
+        tk.Button(bike_search_frame, text="Clear", command=lambda: [self.bike_search.delete(0, tk.END), self.refresh_bikes_table()],
+                 bg='#95a5a6', fg='white', font=("Arial", 9)).pack(side='left', padx=5)
+        
         table_frame = tk.Frame(tab, bg='white')
         table_frame.pack(fill='both', expand=True, padx=20, pady=10)
         
@@ -725,6 +850,7 @@ class GarageApp:
         for row in self.bike_table.get_children():
             self.bike_table.delete(row)
         
+        search = self.bike_search.get().strip().lower() if hasattr(self, 'bike_search') else ""
         rows = self.db.fetchall("""
             SELECT b.id, COALESCE(c.name, '[Deleted]'), b.bike_number, b.brand, b.model, b.year,
                    b.last_service_date, b.next_service_date
@@ -732,6 +858,8 @@ class GarageApp:
         """)
         
         for r in rows:
+            if search and search not in f"{r[1]} {r[2]} {r[3]} {r[4]}".lower():
+                continue
             self.bike_table.insert("", tk.END, values=r)
 
     
@@ -984,6 +1112,13 @@ class GarageApp:
         self.service_filter.grid(row=0, column=1, padx=5)
         self.service_filter.bind('<<ComboboxSelected>>', lambda e: self.refresh_services_table())
         
+        tk.Label(filter_frame, text="Search:", bg='white').grid(row=0, column=2, padx=5)
+        self.service_search = tk.Entry(filter_frame, font=("Arial", 10), width=25)
+        self.service_search.grid(row=0, column=3, padx=5)
+        self.service_search.bind('<KeyRelease>', lambda e: self.refresh_services_table())
+        tk.Button(filter_frame, text="Clear", command=lambda: [self.service_filter.set("All"), self.service_search.delete(0, tk.END), self.refresh_services_table()],
+                 bg='#95a5a6', fg='white', font=("Arial", 9)).grid(row=0, column=4, padx=5)
+        
         table_frame = tk.Frame(tab, bg='white')
         table_frame.pack(fill='both', expand=True, padx=20, pady=10)
         
@@ -1195,6 +1330,8 @@ class GarageApp:
             messagebox.showinfo("Success", f"Service #{service_id} created!")
             service_win.destroy()
             self.refresh_services_table()
+            self.refresh_parts_table()  # Refresh parts to show updated stock
+            self.refresh_payments_table()  # Refresh payments to show new unpaid services
             self.update_dashboard()
         
         tk.Button(form, text="Save Service", command=save_service, bg='#27ae60',
@@ -1322,17 +1459,23 @@ class GarageApp:
                 "SELECT SUM(qty * price) FROM service_parts WHERE service_id=?", (sid,))[0] or 0
             total = service[0] + parts_total
             
+            # Auto-create payment record with full balance due
+            existing_payment = self.db.fetchone("SELECT id FROM payments WHERE service_id=?", (sid,))
+            if not existing_payment and total > 0:
+                self.db.execute("INSERT INTO payments VALUES (NULL,?,?,?,?,?,?)",
+                              (sid, total, 0, total, '-', self.today))
+            
             result = messagebox.askyesno("Service Completed!",
                 f"Service #{sid} marked as completed.\n\n"
                 f"Total Amount: {self.CURRENCY} {total:.2f}\n\n"
-                f"Would you like to print an invoice now?")
+                f"Would you like to record a payment now?")
             
             self.refresh_services_table()
             self.refresh_payments_table()
             self.update_dashboard()
             
             if result:
-                self._generate_invoice_pdf(sid)
+                self.record_payment_for_service(sid)
     
     def reopen_service(self):
         """Reopen a completed service back to In Progress"""
@@ -1654,6 +1797,7 @@ class GarageApp:
             self.service_table.delete(row)
         
         filter_status = self.service_filter.get()
+        search_text = self.service_search.get().strip().lower() if hasattr(self, 'service_search') else ""
         
         base_query = """
             SELECT s.id, s.date, COALESCE(c.name, '[Deleted]'), COALESCE(b.bike_number, '[Deleted]'), 
@@ -1684,6 +1828,12 @@ class GarageApp:
                 pay_status = f"Partial"
             else:
                 pay_status = "Unpaid"
+            
+            # Apply search filter
+            if search_text:
+                searchable = f"{r[0]} {r[1]} {r[2]} {r[3]} {r[4]} {r[6]}".lower()
+                if search_text not in searchable:
+                    continue
             
             # Determine row tag based on service status
             status_tag = r[5].lower().replace(' ', '_') if r[5] else ''
@@ -1723,7 +1873,7 @@ class GarageApp:
         filter_frame.pack(fill='x', padx=20, pady=5)
         
         tk.Label(filter_frame, text="Status:", bg='white', font=("Arial", 10)).grid(row=0, column=0, padx=5)
-        self.payment_filter = ttk.Combobox(filter_frame, values=["All", "Unpaid", "Partial", "Paid"],
+        self.payment_filter = ttk.Combobox(filter_frame, values=["All", "Unpaid", "Partial", "Paid", "Pending"],
                                           state='readonly', width=12)
         self.payment_filter.set("All")
         self.payment_filter.grid(row=0, column=1, padx=5)
@@ -1768,6 +1918,7 @@ class GarageApp:
         self.payment_table.tag_configure('paid', background='#d5f5e3')
         self.payment_table.tag_configure('partial', background='#fdebd0')
         self.payment_table.tag_configure('unpaid', background='#fadbd8')
+        self.payment_table.tag_configure('pending', background='#e8daef')
         
         self.payment_table.pack(fill='both', expand=True)
         
@@ -1806,6 +1957,7 @@ class GarageApp:
     
     def record_payment(self):
         # Use subqueries to avoid cartesian product bug
+        # Show all completed services with outstanding balance
         unpaid = self.db.fetchall("""
             SELECT s.id, COALESCE(c.name, '[Deleted]'), COALESCE(b.bike_number, '[Deleted]'),
                    (s.labour + COALESCE((SELECT SUM(qty * price) FROM service_parts WHERE service_id = s.id), 0)) as total,
@@ -1819,8 +1971,8 @@ class GarageApp:
             ORDER BY s.date DESC
         """)
         
-        # Filter to only unpaid services (u[5] = balance)
-        unpaid = [u for u in unpaid if u[5] > 0]
+        # Filter to only unpaid/partial services (balance > 0)
+        unpaid = [u for u in unpaid if u[5] > 0.01]
         
         if not unpaid:
             messagebox.showinfo("Info", "No pending payments!\n\nAll completed services have been paid in full.")
@@ -2055,9 +2207,11 @@ class GarageApp:
         filter_status = self.payment_filter.get() if hasattr(self, 'payment_filter') else "All"
         search_text = self.payment_search.get().strip().lower() if hasattr(self, 'payment_search') else ""
         
-        # Show ALL completed services with their payment status using subqueries
+        # Show ALL services with their payment status using subqueries
+        # This ensures pending/in-progress services also show up with their amounts
         rows = self.db.fetchall("""
             SELECT s.id, s.date, COALESCE(c.name, '[Deleted]'), COALESCE(b.bike_number, '[Deleted]'),
+                   s.status,
                    (s.labour + COALESCE((SELECT SUM(qty * price) FROM service_parts WHERE service_id = s.id), 0)) as total,
                    COALESCE((SELECT SUM(paid) FROM payments WHERE service_id = s.id), 0) as paid,
                    (s.labour + COALESCE((SELECT SUM(qty * price) FROM service_parts WHERE service_id = s.id), 0)
@@ -2066,7 +2220,6 @@ class GarageApp:
             FROM services s
             LEFT JOIN customers c ON s.customer_id = c.id
             LEFT JOIN bikes b ON s.bike_id = b.id
-            WHERE s.status = 'Completed'
             ORDER BY s.date DESC
         """)
         
@@ -2076,27 +2229,35 @@ class GarageApp:
         unpaid_count = 0
         
         for r in rows:
-            total = r[4]
-            paid = r[5]
-            balance = r[6]
-            method = r[7]
+            svc_status = r[4]  # Service status (Pending/In Progress/Completed)
+            total = r[5]
+            paid = r[6]
+            balance = r[7]
+            method = r[8]
             
-            total_revenue += total
-            if balance > 0.01:
-                total_outstanding += balance
+            # Only count revenue from completed services
+            if svc_status == 'Completed':
+                total_revenue += total
             
-            if paid >= total and total > 0:
-                status = "Paid"
+            # Determine payment status
+            if balance <= 0.01 and total > 0:
+                pay_status = "Paid"
                 paid_count += 1
             elif paid > 0:
-                status = "Partial"
+                pay_status = "Partial"
                 unpaid_count += 1
+                if svc_status == 'Completed':
+                    total_outstanding += balance
+            elif svc_status == 'Completed':
+                pay_status = "Unpaid"
+                unpaid_count += 1
+                total_outstanding += balance
             else:
-                status = "Unpaid"
+                pay_status = "Pending"
                 unpaid_count += 1
             
             # Apply filter
-            if filter_status != "All" and status != filter_status:
+            if filter_status != "All" and pay_status != filter_status:
                 continue
             
             # Apply search
@@ -2106,21 +2267,24 @@ class GarageApp:
                     continue
             
             # Determine tag for color coding
-            tag = status.lower()
+            tag = pay_status.lower()
+            
+            # Show service status alongside payment status
+            status_display = f"{pay_status}" if svc_status == 'Completed' else f"{svc_status}"
             
             self.payment_table.insert("", tk.END, values=(
                 r[0], r[1], r[2], r[3],
                 f"{self.CURRENCY} {total:.2f}", f"{self.CURRENCY} {paid:.2f}",
-                f"{self.CURRENCY} {balance:.2f}", status, method
+                f"{self.CURRENCY} {balance:.2f}", status_display, method
             ), tags=(tag,))
         
         # Update summary bar
         if hasattr(self, 'payment_summary_label'):
             self.payment_summary_label.config(
-                text=f"Total Revenue: {self.CURRENCY} {total_revenue:,.2f}  |  "
+                text=f"Completed Revenue: {self.CURRENCY} {total_revenue:,.2f}  |  "
                      f"Outstanding: {self.CURRENCY} {total_outstanding:,.2f}  |  "
-                     f"Paid: {paid_count} services  |  Unpaid/Partial: {unpaid_count} services  |  "
-                     f"Double-click a row to pay or print")
+                     f"Paid: {paid_count}  |  Unpaid/Partial: {unpaid_count}  |  "
+                     f"Double-click to pay or print")
     
     def print_payment_invoice(self):
         """Print invoice from the Payments tab"""
@@ -2368,7 +2532,24 @@ class GarageApp:
         tk.Label(header, text="📊 Reports & Analytics", font=("Arial", 16, "bold"),
                 bg='#3498db', fg='white').pack(pady=10)
         
-        btn_frame = tk.Frame(tab, bg='#ecf0f1', pady=20)
+        # Date range filter
+        date_frame = tk.LabelFrame(tab, text="Date Range", font=("Arial", 10, "bold"),
+                                   bg='white', padx=10, pady=8)
+        date_frame.pack(fill='x', padx=20, pady=5)
+        
+        tk.Label(date_frame, text="From:", bg='white', font=("Arial", 10)).grid(row=0, column=0, padx=5)
+        self.report_from = tk.Entry(date_frame, font=("Arial", 10), width=12)
+        self.report_from.grid(row=0, column=1, padx=5)
+        # Default to 30 days ago
+        default_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        self.report_from.insert(0, default_from)
+        
+        tk.Label(date_frame, text="To:", bg='white', font=("Arial", 10)).grid(row=0, column=2, padx=5)
+        self.report_to = tk.Entry(date_frame, font=("Arial", 10), width=12)
+        self.report_to.grid(row=0, column=3, padx=5)
+        self.report_to.insert(0, self.today)
+        
+        btn_frame = tk.Frame(tab, bg='#ecf0f1', pady=10)
         btn_frame.pack(fill='x')
         
         for text, cmd, color in [("📈 Monthly Revenue", self.show_monthly_revenue, '#27ae60'),
@@ -2389,10 +2570,20 @@ class GarageApp:
         self.report_text.pack(fill='both', expand=True, padx=10, pady=10)
         scroll.config(command=self.report_text.yview)
     
+    def _get_report_dates(self):
+        """Get date range for reports, returns (from_date, to_date)"""
+        from_date = self.report_from.get().strip() if hasattr(self, 'report_from') else ''
+        to_date = self.report_to.get().strip() if hasattr(self, 'report_to') else ''
+        if not from_date or not to_date:
+            from_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            to_date = self.today
+        return from_date, to_date
+    
     def show_monthly_revenue(self):
         self.report_text.delete(1.0, tk.END)
+        from_date, to_date = self._get_report_dates()
         self.report_text.insert(tk.END, "="*80 + "\n")
-        self.report_text.insert(tk.END, "MONTHLY REVENUE REPORT\n".center(80))
+        self.report_text.insert(tk.END, f"MONTHLY REVENUE REPORT ({from_date} to {to_date})\n".center(80))
         self.report_text.insert(tk.END, "="*80 + "\n\n")
         
         monthly = self.db.fetchall("""
@@ -2400,10 +2591,11 @@ class GarageApp:
                    COUNT(*) as services,
                    SUM(paid) as revenue
             FROM payments
+            WHERE date >= ? AND date <= ?
             GROUP BY month
             ORDER BY month DESC
             LIMIT 12
-        """)
+        """, (from_date, to_date))
         
         self.report_text.insert(tk.END, f"{'Month':<15} {'Services':<15} {'Revenue':<20}\n")
         self.report_text.insert(tk.END, "-"*50 + "\n")
@@ -2487,17 +2679,19 @@ class GarageApp:
     
     def show_profit_loss(self):
         self.report_text.delete(1.0, tk.END)
+        from_date, to_date = self._get_report_dates()
         self.report_text.insert(tk.END, "="*80 + "\n")
-        self.report_text.insert(tk.END, "PROFIT & LOSS STATEMENT\n".center(80))
+        self.report_text.insert(tk.END, f"PROFIT & LOSS STATEMENT ({from_date} to {to_date})\n".center(80))
         self.report_text.insert(tk.END, "="*80 + "\n\n")
         
-        income = self.db.fetchone("SELECT SUM(paid) FROM payments")[0] or 0
+        income = self.db.fetchone("SELECT SUM(paid) FROM payments WHERE date >= ? AND date <= ?", (from_date, to_date))[0] or 0
         
         expenses_by_cat = self.db.fetchall("""
             SELECT category, SUM(amount)
             FROM expenses
+            WHERE date >= ? AND date <= ?
             GROUP BY category
-        """)
+        """, (from_date, to_date))
         
         self.report_text.insert(tk.END, "INCOME:\n")
         self.report_text.insert(tk.END, f"Service Revenue:          {self.CURRENCY} {income:>15,.2f}\n\n")
