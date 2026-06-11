@@ -86,7 +86,7 @@ class DBManager:
                 ('garage_website', 'www.bikeservice.com'),
                 ('logo_path', ''),
                 ('currency_symbol', 'Rs'),
-                ('service_interval_days', '180'),
+                ('service_interval', '180'),
                 ('low_stock_threshold', '5')
             ]
             for key, value in default_settings:
@@ -144,6 +144,7 @@ class GarageApp:
         self.today = datetime.now().strftime("%Y-%m-%d")
         self.current_role = None
         self.current_user = None
+        self.CURRENCY = self.db.get_setting('currency_symbol', 'Rs')
         self.login_screen()
     
     # ========== LOGIN ==========
@@ -267,8 +268,6 @@ class GarageApp:
             self.current_role = None
             self.current_user = None
             self.login_screen()
-        self.build_expenses_tab()
-        self.build_reports_tab()
     
     # ========== DASHBOARD ==========
     def build_dashboard(self):
@@ -276,11 +275,24 @@ class GarageApp:
         
         header = tk.Frame(tab, bg='#3498db', height=60)
         header.pack(fill='x')
-        tk.Label(header, text="📊 Dashboard Overview", font=("Arial", 20, "bold"),
+        tk.Label(header, text="Dashboard Overview", font=("Arial", 20, "bold"),
                 bg='#3498db', fg='white').pack(pady=15)
         
+        # Quick Actions bar
+        qa_frame = tk.LabelFrame(tab, text="Quick Actions", font=("Arial", 11, "bold"),
+                                bg='white', padx=10, pady=8)
+        qa_frame.pack(fill='x', padx=20, pady=5)
+        
+        for text, cmd, color in [
+            ("+ New Service", self.create_new_service, '#27ae60'),
+            ("+ Record Payment", self.record_payment, '#f39c12'),
+            ("+ Add Customer", lambda: self.notebook.select(1), '#3498db'),
+            ("+ Add Part", lambda: self.notebook.select(3), '#9b59b6')]:
+            tk.Button(qa_frame, text=text, command=cmd, bg=color, fg='white',
+                     font=("Arial", 10, "bold"), cursor='hand2', width=16).pack(side='left', padx=5, pady=5)
+        
         stats_frame = tk.Frame(tab, bg='#ecf0f1')
-        stats_frame.pack(fill='x', padx=20, pady=20)
+        stats_frame.pack(fill='x', padx=20, pady=10)
         
         self.income_label = tk.Label(stats_frame, text="", font=("Arial", 14), bg='#2ecc71',
                                      fg='white', width=20, height=4, relief='raised', bd=3)
@@ -298,28 +310,48 @@ class GarageApp:
                                       fg='white', width=20, height=4, relief='raised', bd=3)
         self.pending_label.grid(row=0, column=3, padx=10, pady=10)
         
-        activity_frame = tk.Frame(tab, bg='white', relief='raised', bd=2)
-        activity_frame.pack(fill='both', expand=True, padx=20, pady=10)
+        # Service count cards
+        counts_frame = tk.Frame(tab, bg='#ecf0f1')
+        counts_frame.pack(fill='x', padx=20, pady=5)
         
-        tk.Label(activity_frame, text="📋 Recent Services", font=("Arial", 14, "bold"),
+        self.pending_svc_label = tk.Label(counts_frame, text="", font=("Arial", 12), bg='#e67e22',
+                                          fg='white', width=20, height=3, relief='raised', bd=2)
+        self.pending_svc_label.grid(row=0, column=0, padx=10, pady=5)
+        
+        self.inprogress_svc_label = tk.Label(counts_frame, text="", font=("Arial", 12), bg='#2980b9',
+                                             fg='white', width=20, height=3, relief='raised', bd=2)
+        self.inprogress_svc_label.grid(row=0, column=1, padx=10, pady=5)
+        
+        self.completed_svc_label = tk.Label(counts_frame, text="", font=("Arial", 12), bg='#27ae60',
+                                           fg='white', width=20, height=3, relief='raised', bd=2)
+        self.completed_svc_label.grid(row=0, column=2, padx=10, pady=5)
+        
+        self.customers_count_label = tk.Label(counts_frame, text="", font=("Arial", 12), bg='#8e44ad',
+                                             fg='white', width=20, height=3, relief='raised', bd=2)
+        self.customers_count_label.grid(row=0, column=3, padx=10, pady=5)
+        
+        activity_frame = tk.Frame(tab, bg='white', relief='raised', bd=2)
+        activity_frame.pack(fill='both', expand=True, padx=20, pady=5)
+        
+        tk.Label(activity_frame, text="Recent Services", font=("Arial", 14, "bold"),
                 bg='white').pack(pady=10)
         
         self.recent_services_tree = ttk.Treeview(activity_frame,
-            columns=("Date", "Customer", "Bike", "Status", "Amount"), show='headings', height=10)
+            columns=("Date", "Customer", "Bike", "Status", "Amount"), show='headings', height=8)
         for col in self.recent_services_tree['columns']:
             self.recent_services_tree.heading(col, text=col)
-        self.recent_services_tree.pack(fill='both', expand=True, padx=10, pady=10)
+        self.recent_services_tree.pack(fill='both', expand=True, padx=10, pady=5)
         
         alert_frame = tk.Frame(tab, bg='#ffe5e5', relief='raised', bd=2)
-        alert_frame.pack(fill='x', padx=20, pady=10)
+        alert_frame.pack(fill='x', padx=20, pady=5)
         
-        tk.Label(alert_frame, text="⚠️ Low Stock Alerts", font=("Arial", 12, "bold"),
+        tk.Label(alert_frame, text="Low Stock Alerts", font=("Arial", 12, "bold"),
                 bg='#ffe5e5', fg='#c0392b').pack(pady=5)
         
-        self.alert_text = tk.Text(alert_frame, height=4, bg='#ffe5e5', font=("Arial", 10))
+        self.alert_text = tk.Text(alert_frame, height=3, bg='#ffe5e5', font=("Arial", 10))
         self.alert_text.pack(fill='x', padx=10, pady=5)
         
-        tk.Button(tab, text="🔄 Refresh Dashboard", command=self.update_dashboard,
+        tk.Button(tab, text="Refresh Dashboard", command=self.update_dashboard,
                  bg='#3498db', fg='white', font=("Arial", 11, "bold"), cursor='hand2').pack(pady=10)
         
         self.update_dashboard()
@@ -330,35 +362,45 @@ class GarageApp:
         profit = income - expenses
         pending = self.db.fetchone("SELECT SUM(balance) FROM payments WHERE balance > 0")[0] or 0
         
-        self.income_label.config(text=f"💰 Total Income\nRs {income:,.2f}")
-        self.expense_label.config(text=f"💸 Total Expenses\nRs {expenses:,.2f}")
-        self.profit_label.config(text=f"📈 Net Profit\nRs {profit:,.2f}")
-        self.pending_label.config(text=f"⏳ Pending\nRs {pending:,.2f}")
+        self.income_label.config(text=f"Total Income\n{self.CURRENCY} {income:,.2f}")
+        self.expense_label.config(text=f"Total Expenses\n{self.CURRENCY} {expenses:,.2f}")
+        self.profit_label.config(text=f"Net Profit\n{self.CURRENCY} {profit:,.2f}")
+        self.pending_label.config(text=f"Pending\n{self.CURRENCY} {pending:,.2f}")
+        
+        # Service count cards
+        pending_count = self.db.fetchone("SELECT COUNT(*) FROM services WHERE status='Pending'")[0]
+        inprogress_count = self.db.fetchone("SELECT COUNT(*) FROM services WHERE status='In Progress'")[0]
+        completed_count = self.db.fetchone("SELECT COUNT(*) FROM services WHERE status='Completed'")[0]
+        customer_count = self.db.fetchone("SELECT COUNT(*) FROM customers")[0]
+        
+        self.pending_svc_label.config(text=f"Pending Services\n{pending_count}")
+        self.inprogress_svc_label.config(text=f"In Progress\n{inprogress_count}")
+        self.completed_svc_label.config(text=f"Completed\n{completed_count}")
+        self.customers_count_label.config(text=f"Total Customers\n{customer_count}")
         
         for row in self.recent_services_tree.get_children():
             self.recent_services_tree.delete(row)
         
         recent = self.db.fetchall("""
-            SELECT s.date, c.name, b.bike_number, s.status,
-                   (s.labour + COALESCE(SUM(sp.qty * sp.price), 0)) as total
+            SELECT s.date, COALESCE(c.name, '[Deleted]'), COALESCE(b.bike_number, '[Deleted]'), s.status,
+                   (s.labour + COALESCE((SELECT SUM(qty * price) FROM service_parts WHERE service_id = s.id), 0)) as total
             FROM services s
-            JOIN customers c ON s.customer_id = c.id
-            JOIN bikes b ON s.bike_id = b.id
-            LEFT JOIN service_parts sp ON s.id = sp.service_id
-            GROUP BY s.id ORDER BY s.date DESC LIMIT 10
+            LEFT JOIN customers c ON s.customer_id = c.id
+            LEFT JOIN bikes b ON s.bike_id = b.id
+            ORDER BY s.date DESC LIMIT 10
         """)
         
         for r in recent:
-            self.recent_services_tree.insert("", tk.END, values=(r[0], r[1], r[2], r[3], f"Rs {r[4]:,.2f}"))
+            self.recent_services_tree.insert("", tk.END, values=(r[0], r[1], r[2], r[3], f"{self.CURRENCY} {r[4]:,.2f}"))
         
         self.alert_text.delete(1.0, tk.END)
         low_stock = self.db.fetchall("SELECT name, quantity, min_stock FROM parts WHERE quantity <= min_stock")
         
         if low_stock:
             for part in low_stock:
-                self.alert_text.insert(tk.END, f"⚠️ {part[0]}: {part[1]} units (Min: {part[2]})\n")
+                self.alert_text.insert(tk.END, f"  {part[0]}: {part[1]} units (Min: {part[2]})\n")
         else:
-            self.alert_text.insert(tk.END, "✅ All parts adequately stocked!")
+            self.alert_text.insert(tk.END, "All parts adequately stocked!")
 
     
     # ========== CUSTOMERS TAB ==========
@@ -399,6 +441,16 @@ class GarageApp:
                                   ("🧹 Clear", self.clear_customer_form, '#95a5a6')]:
             tk.Button(btn_frame, text=text, command=cmd, bg=color, fg='white',
                      font=("Arial", 10, "bold"), width=15, cursor='hand2').pack(side='left', padx=5)
+        
+        # Search bar for customers (above the table)
+        search_frame = tk.Frame(tab, bg='white')
+        search_frame.pack(fill='x', padx=20, pady=2)
+        tk.Label(search_frame, text="Search:", bg='white', font=("Arial", 10)).pack(side='left', padx=5)
+        self.customer_search = tk.Entry(search_frame, font=("Arial", 10), width=30)
+        self.customer_search.pack(side='left', padx=5)
+        self.customer_search.bind('<KeyRelease>', lambda e: self.refresh_customers_table())
+        tk.Button(search_frame, text="Clear", command=lambda: [self.customer_search.delete(0, tk.END), self.refresh_customers_table()],
+                 bg='#95a5a6', fg='white', font=("Arial", 9)).pack(side='left', padx=5)
         
         table_frame = tk.Frame(tab, bg='white')
         table_frame.pack(fill='both', expand=True, padx=20, pady=10)
@@ -464,10 +516,15 @@ class GarageApp:
         
         if messagebox.askyesno("Confirm", "Delete this customer?"):
             cid = self.customer_table.item(selected[0])['values'][0]
+            # Nullify customer_id in services referencing this customer
+            self.db.execute("UPDATE services SET customer_id = NULL WHERE customer_id = ?", (cid,))
+            # Nullify customer_id in bikes referencing this customer
+            self.db.execute("UPDATE bikes SET customer_id = NULL WHERE customer_id = ?", (cid,))
             self.db.execute("DELETE FROM customers WHERE id=?", (cid,))
             messagebox.showinfo("Success", "Customer deleted!")
             self.clear_customer_form()
             self.refresh_customers_table()
+            self.refresh_all_dropdowns()
     
     def load_customer_data(self, event):
         selected = self.customer_table.selection()
@@ -491,8 +548,12 @@ class GarageApp:
     def refresh_customers_table(self):
         for row in self.customer_table.get_children():
             self.customer_table.delete(row)
+        
+        search = self.customer_search.get().strip().lower() if hasattr(self, 'customer_search') else ""
         rows = self.db.fetchall("SELECT * FROM customers")
         for r in rows:
+            if search and search not in f"{r[1]} {r[2]} {r[3]} {r[4]}".lower():
+                continue
             self.customer_table.insert("", tk.END, values=r)
     
     # ========== BIKES TAB ==========
@@ -603,6 +664,10 @@ class GarageApp:
             messagebox.showerror("Error", "Select a bike!")
             return
         
+        if not self.b_customer.get():
+            messagebox.showerror("Error", "Select a customer!")
+            return
+        
         bid = self.bike_table.item(selected[0])['values'][0]
         cid = self.customer_map[self.b_customer.get()]
         num = self.b_number.get().strip().upper()
@@ -624,6 +689,8 @@ class GarageApp:
         
         if messagebox.askyesno("Confirm", "Delete this bike?"):
             bid = self.bike_table.item(selected[0])['values'][0]
+            # Nullify bike_id in services referencing this bike
+            self.db.execute("UPDATE services SET bike_id = NULL WHERE bike_id = ?", (bid,))
             self.db.execute("DELETE FROM bikes WHERE id=?", (bid,))
             messagebox.showinfo("Success", "Bike deleted!")
             self.clear_bike_form()
@@ -659,9 +726,9 @@ class GarageApp:
             self.bike_table.delete(row)
         
         rows = self.db.fetchall("""
-            SELECT b.id, c.name, b.bike_number, b.brand, b.model, b.year,
+            SELECT b.id, COALESCE(c.name, '[Deleted]'), b.bike_number, b.brand, b.model, b.year,
                    b.last_service_date, b.next_service_date
-            FROM bikes b JOIN customers c ON b.customer_id = c.id
+            FROM bikes b LEFT JOIN customers c ON b.customer_id = c.id
         """)
         
         for r in rows:
@@ -720,6 +787,22 @@ class GarageApp:
                                   ("🧹 Clear", self.clear_part_form, '#95a5a6')]:
             tk.Button(btn_frame, text=text, command=cmd, bg=color, fg='white',
                      font=("Arial", 10, "bold"), width=15, cursor='hand2').pack(side='left', padx=5)
+        
+        # Search & filter bar for parts
+        parts_search_frame = tk.Frame(tab, bg='white')
+        parts_search_frame.pack(fill='x', padx=20, pady=2)
+        tk.Label(parts_search_frame, text="Search:", bg='white', font=("Arial", 10)).pack(side='left', padx=5)
+        self.part_search = tk.Entry(parts_search_frame, font=("Arial", 10), width=25)
+        self.part_search.pack(side='left', padx=5)
+        self.part_search.bind('<KeyRelease>', lambda e: self.refresh_parts_table())
+        tk.Label(parts_search_frame, text="Category:", bg='white', font=("Arial", 10)).pack(side='left', padx=5)
+        self.part_cat_filter = ttk.Combobox(parts_search_frame, values=["All", "Engine", "Brake", "Electrical", "Body", "Suspension", "Oil", "Other"],
+                                            state='readonly', width=15)
+        self.part_cat_filter.set("All")
+        self.part_cat_filter.pack(side='left', padx=5)
+        self.part_cat_filter.bind('<<ComboboxSelected>>', lambda e: self.refresh_parts_table())
+        tk.Button(parts_search_frame, text="Clear", command=lambda: [self.part_search.delete(0, tk.END), self.part_cat_filter.set("All"), self.refresh_parts_table()],
+                 bg='#95a5a6', fg='white', font=("Arial", 9)).pack(side='left', padx=5)
         
         table_frame = tk.Frame(tab, bg='white')
         table_frame.pack(fill='both', expand=True, padx=20, pady=10)
@@ -795,10 +878,13 @@ class GarageApp:
         
         if messagebox.askyesno("Confirm", "Delete this part?"):
             pid = self.part_table.item(selected[0])['values'][0]
+            # Nullify part_id in service_parts referencing this part
+            self.db.execute("UPDATE service_parts SET part_id = NULL WHERE part_id = ?", (pid,))
             self.db.execute("DELETE FROM parts WHERE id=?", (pid,))
             messagebox.showinfo("Success", "Part deleted!")
             self.clear_part_form()
             self.refresh_parts_table()
+            self.update_dashboard()
     
     def add_stock(self):
         selected = self.part_table.selection()
@@ -807,7 +893,7 @@ class GarageApp:
             return
         
         pid = self.part_table.item(selected[0])['values'][0]
-        current_qty = self.part_table.item(selected[0])['values'][5]
+        current_qty = self.db.fetchone("SELECT quantity FROM parts WHERE id=?", (pid,))[0]
         
         add_qty = simpledialog.askinteger("Add Stock", "Enter quantity to add:", minvalue=1)
         if add_qty:
@@ -815,6 +901,7 @@ class GarageApp:
             self.db.execute("UPDATE parts SET quantity=? WHERE id=?", (new_qty, pid))
             messagebox.showinfo("Success", f"Added {add_qty} units. New: {new_qty}")
             self.refresh_parts_table()
+            self.update_dashboard()
     
     def load_part_data(self, event):
         selected = self.part_table.selection()
@@ -847,8 +934,17 @@ class GarageApp:
         for row in self.part_table.get_children():
             self.part_table.delete(row)
         
+        search = self.part_search.get().strip().lower() if hasattr(self, 'part_search') else ""
+        cat_filter = self.part_cat_filter.get() if hasattr(self, 'part_cat_filter') else "All"
+        
         rows = self.db.fetchall("SELECT *, (price - cost_price) as profit FROM parts")
         for r in rows:
+            # Apply category filter
+            if cat_filter != "All" and r[2] != cat_filter:
+                continue
+            # Apply search filter
+            if search and search not in f"{r[1]} {r[2]} {r[7]}".lower():
+                continue
             vals = list(r)
             self.part_table.insert("", tk.END, values=vals,
                                   tags=('low_stock',) if r[5] <= r[6] else ())
@@ -868,10 +964,12 @@ class GarageApp:
         btn_frame = tk.Frame(tab, bg='#ecf0f1')
         btn_frame.pack(fill='x', padx=20, pady=10)
         
-        for text, cmd, color in [("➕ New Service", self.create_new_service, '#27ae60'),
-                                  ("🔍 View/Edit", self.view_edit_service, '#f39c12'),
-                                  ("✅ Complete", self.complete_service, '#3498db'),
-                                  ("🖨️ Print Invoice", self.print_service_invoice, '#9b59b6')]:
+        for text, cmd, color in [("+ New Service", self.create_new_service, '#27ae60'),
+                                  ("View/Edit", self.view_edit_service, '#f39c12'),
+                                  ("Complete", self.complete_service, '#3498db'),
+                                  ("Print Invoice", self.print_service_invoice, '#9b59b6'),
+                                  ("Reopen", self.reopen_service, '#e67e22'),
+                                  ("Delete", self.delete_service, '#e74c3c')]:
             tk.Button(btn_frame, text=text, command=cmd, bg=color, fg='white',
                      font=("Arial", 11, "bold"), cursor='hand2').pack(side='left', padx=5)
         
@@ -893,76 +991,100 @@ class GarageApp:
         scroll_y.pack(side='right', fill='y')
         
         self.service_table = ttk.Treeview(table_frame,
-            columns=("ID", "Date", "Customer", "Bike", "Problem", "Status", "Mechanic", "Labour", "Parts", "Total"),
+            columns=("ID", "Date", "Customer", "Bike", "Problem", "Status", "Payment", "Mechanic", "Labour", "Parts", "Total"),
             show='headings', yscrollcommand=scroll_y.set)
         
         scroll_y.config(command=self.service_table.yview)
         
         for col in self.service_table['columns']:
             self.service_table.heading(col, text=col)
-            self.service_table.column(col, width=100)
+            self.service_table.column(col, width=90)
         
         self.service_table.pack(fill='both', expand=True)
+        
+        # Color-coded status rows
+        self.service_table.tag_configure('completed', background='#d5f5e3')
+        self.service_table.tag_configure('in_progress', background='#d6eaf8')
+        self.service_table.tag_configure('pending', background='#fdebd0')
+        self.service_table.tag_configure('paid', foreground='#27ae60')
+        self.service_table.tag_configure('unpaid', foreground='#e74c3c')
+        self.service_table.tag_configure('partial', foreground='#f39c12')
         
         self.refresh_services_table()
     
     def create_new_service(self):
         service_win = tk.Toplevel(self.master)
         service_win.title("Create New Service")
-        service_win.geometry("900x700")
+        service_win.geometry("900x720")
         service_win.grab_set()
         
-        tk.Label(service_win, text="🔨 New Service Entry", font=("Arial", 16, "bold"),
-                bg='#3498db', fg='white').pack(fill='x', pady=10)
+        tk.Label(service_win, text="New Service Entry", font=("Arial", 16, "bold"),
+                bg='#27ae60', fg='white').pack(fill='x', pady=10)
         
-        form = tk.Frame(service_win, padx=20, pady=20)
+        form = tk.Frame(service_win, padx=20, pady=15)
         form.pack(fill='both')
         
+        # Bike selection with search
         tk.Label(form, text="Select Bike*", font=("Arial", 11, "bold")).grid(row=0, column=0, sticky='w', pady=5)
         bike_combo = ttk.Combobox(form, font=("Arial", 10), width=40, state='readonly')
         bikes = self.db.fetchall("""
-            SELECT b.id, b.bike_number, b.model, c.name
-            FROM bikes b JOIN customers c ON b.customer_id = c.id
+            SELECT b.id, b.bike_number, b.model, COALESCE(c.name, '[Deleted]')
+            FROM bikes b LEFT JOIN customers c ON b.customer_id = c.id
         """)
         bike_map = {f"{b[1]} - {b[2]} ({b[3]})": (b[0], b[1], b[2], b[3]) for b in bikes}
         bike_combo['values'] = list(bike_map.keys())
         bike_combo.grid(row=0, column=1, pady=5, padx=10, columnspan=2)
         
-        tk.Label(form, text="Problem*", font=("Arial", 11, "bold")).grid(row=1, column=0, sticky='nw', pady=5)
-        problem_text = tk.Text(form, height=4, width=50, font=("Arial", 10))
-        problem_text.grid(row=1, column=1, pady=5, padx=10, columnspan=2)
+        # Auto-fill customer info when bike is selected
+        bike_info_label = tk.Label(form, text="", font=("Arial", 9), fg='#7f8c8d')
+        bike_info_label.grid(row=1, column=1, sticky='w', padx=10, columnspan=2)
         
-        tk.Label(form, text="Notes", font=("Arial", 11, "bold")).grid(row=2, column=0, sticky='nw', pady=5)
-        notes_text = tk.Text(form, height=4, width=50, font=("Arial", 10))
-        notes_text.grid(row=2, column=1, pady=5, padx=10, columnspan=2)
+        def on_bike_selected(event):
+            if bike_combo.get():
+                info = bike_map[bike_combo.get()]
+                bike_info_label.config(text=f"Owner: {info[3]} | Model: {info[2]}")
         
-        tk.Label(form, text="Mechanic*", font=("Arial", 11, "bold")).grid(row=3, column=0, sticky='w', pady=5)
-        mechanic_combo = ttk.Combobox(form, font=("Arial", 10), width=30, state='readonly')
+        bike_combo.bind('<<ComboboxSelected>>', on_bike_selected)
+        
+        tk.Label(form, text="Problem*", font=("Arial", 11, "bold")).grid(row=2, column=0, sticky='nw', pady=5)
+        problem_text = tk.Text(form, height=3, width=50, font=("Arial", 10))
+        problem_text.grid(row=2, column=1, pady=5, padx=10, columnspan=2)
+        
+        tk.Label(form, text="Notes", font=("Arial", 11, "bold")).grid(row=3, column=0, sticky='nw', pady=5)
+        notes_text = tk.Text(form, height=2, width=50, font=("Arial", 10))
+        notes_text.grid(row=3, column=1, pady=5, padx=10, columnspan=2)
+        
+        tk.Label(form, text="Mechanic*", font=("Arial", 11, "bold")).grid(row=4, column=0, sticky='w', pady=5)
+        mechanic_combo = ttk.Combobox(form, font=("Arial", 10), width=28, state='readonly')
         mechanics = self.db.fetchall("SELECT name FROM mechanics")
         mechanic_combo['values'] = [m[0] for m in mechanics]
-        mechanic_combo.grid(row=3, column=1, pady=5, padx=10, sticky='w')
+        mechanic_combo.grid(row=4, column=1, pady=5, padx=10, sticky='w')
         
-        tk.Label(form, text="Labour*", font=("Arial", 11, "bold")).grid(row=4, column=0, sticky='w', pady=5)
+        tk.Label(form, text="Labour*", font=("Arial", 11, "bold")).grid(row=5, column=0, sticky='w', pady=5)
         labour_entry = tk.Entry(form, font=("Arial", 10), width=20)
-        labour_entry.grid(row=4, column=1, pady=5, padx=10, sticky='w')
+        labour_entry.grid(row=5, column=1, pady=5, padx=10, sticky='w')
+        labour_entry.insert(0, "0")
+        tk.Label(form, text=self.CURRENCY, font=("Arial", 10), fg='gray').grid(row=5, column=2, sticky='w')
         
-        tk.Label(form, text="Status*", font=("Arial", 11, "bold")).grid(row=5, column=0, sticky='w', pady=5)
+        tk.Label(form, text="Status*", font=("Arial", 11, "bold")).grid(row=6, column=0, sticky='w', pady=5)
         status_combo = ttk.Combobox(form, font=("Arial", 10), width=20, state='readonly',
                                    values=["Pending", "In Progress", "Completed"])
         status_combo.set("Pending")
-        status_combo.grid(row=5, column=1, pady=5, padx=10, sticky='w')
+        status_combo.grid(row=6, column=1, pady=5, padx=10, sticky='w')
         
-        tk.Label(form, text="Parts Used", font=("Arial", 12, "bold"), fg='#2c3e50').grid(row=6, column=0, columnspan=3, pady=(20,10))
+        tk.Label(form, text="Parts Used", font=("Arial", 12, "bold"), fg='#2c3e50').grid(row=7, column=0, columnspan=3, pady=(15,5))
         
         parts_frame = tk.Frame(form)
-        parts_frame.grid(row=7, column=0, columnspan=3, pady=5)
+        parts_frame.grid(row=8, column=0, columnspan=3, pady=5)
         
-        parts_tree = ttk.Treeview(parts_frame, columns=("Part", "Qty", "Price", "Total"),
-                                 show='headings', height=6)
+        parts_tree = ttk.Treeview(parts_frame, columns=("ID", "Part", "Qty", "Price", "Total"),
+                                 show='headings', height=5)
+        parts_tree.heading("ID", text="ID")
         parts_tree.heading("Part", text="Part")
         parts_tree.heading("Qty", text="Qty")
         parts_tree.heading("Price", text="Price")
         parts_tree.heading("Total", text="Total")
+        parts_tree.column("ID", width=0, stretch=False)  # Hide ID column
         parts_tree.pack(side='left')
         
         parts_scroll = tk.Scrollbar(parts_frame, command=parts_tree.yview)
@@ -970,52 +1092,85 @@ class GarageApp:
         parts_tree.config(yscrollcommand=parts_scroll.set)
         
         add_parts_frame = tk.Frame(form)
-        add_parts_frame.grid(row=8, column=0, columnspan=3, pady=10)
+        add_parts_frame.grid(row=9, column=0, columnspan=3, pady=8)
         
         tk.Label(add_parts_frame, text="Part:").pack(side='left', padx=5)
         part_combo = ttk.Combobox(add_parts_frame, width=25, state='readonly')
         available_parts = self.db.fetchall("SELECT id, name, price, quantity FROM parts WHERE quantity > 0")
-        part_map = {f"{p[1]} (Stock: {p[3]}) - Rs {p[2]}": (p[0], p[1], p[2], p[3]) for p in available_parts}
+        part_map = {f"{p[1]} (Stock: {p[3]}) - {self.CURRENCY} {p[2]}": (p[0], p[1], p[2], p[3]) for p in available_parts}
         part_combo['values'] = list(part_map.keys())
         part_combo.pack(side='left', padx=5)
         
         tk.Label(add_parts_frame, text="Qty:").pack(side='left', padx=5)
-        qty_spin = tk.Spinbox(add_parts_frame, from_=1, to=100, width=10)
+        qty_spin = tk.Spinbox(add_parts_frame, from_=1, to=100, width=8)
         qty_spin.pack(side='left', padx=5)
         
         def add_part_to_service():
             if not part_combo.get():
                 return
             part_info = part_map[part_combo.get()]
-            qty = int(qty_spin.get())
+            try:
+                qty = int(qty_spin.get())
+            except ValueError:
+                messagebox.showerror("Error", "Invalid quantity!")
+                return
             if qty > part_info[3]:
                 messagebox.showerror("Error", "Insufficient stock!")
                 return
             total = part_info[2] * qty
-            parts_tree.insert("", tk.END, values=(part_info[1], qty, part_info[2], total))
+            parts_tree.insert("", tk.END, values=(part_info[0], part_info[1], qty, part_info[2], total))
+            update_total_display()
         
         def remove_selected_part():
             selected = parts_tree.selection()
             if selected:
                 parts_tree.delete(selected)
+                update_total_display()
         
-        tk.Button(add_parts_frame, text="➕ Add", command=add_part_to_service,
+        tk.Button(add_parts_frame, text="Add", command=add_part_to_service,
                  bg='#27ae60', fg='white').pack(side='left', padx=5)
-        tk.Button(add_parts_frame, text="🗑️ Remove", command=remove_selected_part,
+        tk.Button(add_parts_frame, text="Remove", command=remove_selected_part,
                  bg='#e74c3c', fg='white').pack(side='left', padx=5)
+        
+        # Live total display
+        total_display = tk.Label(form, text="Grand Total: --", font=("Arial", 13, "bold"), fg='#2c3e50')
+        total_display.grid(row=10, column=0, columnspan=3, pady=10)
+        
+        def update_total_display(*args):
+            try:
+                labour = float(labour_entry.get() or 0)
+            except ValueError:
+                labour = 0
+            parts_total = 0
+            for item in parts_tree.get_children():
+                vals = parts_tree.item(item)['values']
+                parts_total += float(vals[4])  # Total is at index 4 (ID, Part, Qty, Price, Total)
+            total_display.config(text=f"Grand Total: {self.CURRENCY} {labour + parts_total:.2f}  (Labour: {self.CURRENCY} {labour:.2f} + Parts: {self.CURRENCY} {parts_total:.2f})")
+        
+        labour_entry.bind('<KeyRelease>', update_total_display)
         
         def save_service():
             if not bike_combo.get() or not problem_text.get("1.0", tk.END).strip():
                 messagebox.showerror("Error", "Select bike and enter problem!")
                 return
             
+            if not mechanic_combo.get():
+                messagebox.showerror("Error", "Select a mechanic!")
+                return
+            
+            try:
+                labour = float(labour_entry.get() or 0)
+            except ValueError:
+                messagebox.showerror("Error", "Invalid labour amount!")
+                return
+            
             bike_info = bike_map[bike_combo.get()]
             bike_id = bike_info[0]
-            customer_id = self.db.fetchone("SELECT customer_id FROM bikes WHERE id=?", (bike_id,))[0]
+            customer_id_row = self.db.fetchone("SELECT customer_id FROM bikes WHERE id=?", (bike_id,))
+            customer_id = customer_id_row[0] if customer_id_row and customer_id_row[0] else None
             problem = problem_text.get("1.0", tk.END).strip()
             notes = notes_text.get("1.0", tk.END).strip()
             mechanic = mechanic_combo.get()
-            labour = float(labour_entry.get() or 0)
             status = status_combo.get()
             
             service_id = self.db.execute("""
@@ -1024,15 +1179,16 @@ class GarageApp:
             
             for item in parts_tree.get_children():
                 vals = parts_tree.item(item)['values']
-                part_name = vals[0]
-                part_id = self.db.fetchone("SELECT id FROM parts WHERE name=?", (part_name,))[0]
-                qty, price = vals[1], vals[2]
+                part_id = vals[0]   # Part ID (hidden column)
+                qty = vals[2]       # Qty is at index 2 (ID, Part, Qty, Price, Total)
+                price = vals[3]     # Price is at index 3
                 
                 self.db.execute("INSERT INTO service_parts VALUES (NULL,?,?,?,?)",
                               (service_id, part_id, qty, price))
                 self.db.execute("UPDATE parts SET quantity = quantity - ? WHERE id=?", (qty, part_id))
             
-            next_service = (datetime.now() + timedelta(days=180)).strftime("%Y-%m-%d")
+            interval = int(self.db.get_setting('service_interval', '180'))
+            next_service = (datetime.now() + timedelta(days=interval)).strftime("%Y-%m-%d")
             self.db.execute("UPDATE bikes SET last_service_date=?, next_service_date=? WHERE id=?",
                           (self.today, next_service, bike_id))
             
@@ -1041,8 +1197,8 @@ class GarageApp:
             self.refresh_services_table()
             self.update_dashboard()
         
-        tk.Button(form, text="💾 Save Service", command=save_service, bg='#27ae60',
-                 fg='white', font=("Arial", 12, "bold"), width=20).grid(row=9, column=0, columnspan=3, pady=20)
+        tk.Button(form, text="Save Service", command=save_service, bg='#27ae60',
+                 fg='white', font=("Arial", 12, "bold"), width=20).grid(row=11, column=0, columnspan=3, pady=15)
     
     def view_edit_service(self):
         selected = self.service_table.selection()
@@ -1053,10 +1209,10 @@ class GarageApp:
         sid = self.service_table.item(selected[0])['values'][0]
         
         service = self.db.fetchone("""
-            SELECT s.*, c.name, b.bike_number, b.model
+            SELECT s.*, COALESCE(c.name, '[Deleted]'), COALESCE(b.bike_number, '[Deleted]'), COALESCE(b.model, '[Deleted]')
             FROM services s
-            JOIN customers c ON s.customer_id = c.id
-            JOIN bikes b ON s.bike_id = b.id
+            LEFT JOIN customers c ON s.customer_id = c.id
+            LEFT JOIN bikes b ON s.bike_id = b.id
             WHERE s.id = ?
         """, (sid,))
         
@@ -1082,12 +1238,12 @@ class GarageApp:
         info_text.insert(tk.END, f"Notes:\n{service[5]}\n\n")
         info_text.insert(tk.END, f"Mechanic: {service[8]}\n")
         info_text.insert(tk.END, f"Status: {service[7]}\n", "bold")
-        info_text.insert(tk.END, f"Labour: Rs {service[6]}\n\n")
+        info_text.insert(tk.END, f"Labour: {self.CURRENCY} {service[6]}\n\n")
         
         parts = self.db.fetchall("""
-            SELECT p.name, sp.qty, sp.price, (sp.qty * sp.price) as total
+            SELECT COALESCE(p.name, '[Deleted]'), sp.qty, sp.price, (sp.qty * sp.price) as total
             FROM service_parts sp
-            JOIN parts p ON sp.part_id = p.id
+            LEFT JOIN parts p ON sp.part_id = p.id
             WHERE sp.service_id = ?
         """, (sid,))
         
@@ -1095,16 +1251,46 @@ class GarageApp:
             info_text.insert(tk.END, "Parts Used:\n", "bold")
             parts_total = 0
             for part in parts:
-                info_text.insert(tk.END, f"  • {part[0]} x {part[1]} @ Rs {part[2]} = Rs {part[3]}\n")
+                info_text.insert(tk.END, f"  • {part[0]} x {part[1]} @ {self.CURRENCY} {part[2]} = {self.CURRENCY} {part[3]}\n")
                 parts_total += part[3]
-            info_text.insert(tk.END, f"\nParts Total: Rs {parts_total}\n")
-            info_text.insert(tk.END, f"Grand Total: Rs {service[6] + parts_total}\n", "bold")
+            info_text.insert(tk.END, f"\nParts Total: {self.CURRENCY} {parts_total}\n")
+            info_text.insert(tk.END, f"Grand Total: {self.CURRENCY} {service[6] + parts_total}\n", "bold")
         
         info_text.config(state='disabled')
         info_text.tag_config("bold", font=("Arial", 11, "bold"))
         
-        tk.Button(view_win, text="Close", command=view_win.destroy,
-                 bg='#95a5a6', fg='white', font=("Arial", 11, "bold")).pack(pady=10)
+        # Payment info section for completed services
+        if service[7] == 'Completed':
+            payment_info = self.db.fetchone("""
+                SELECT COALESCE(SUM(paid), 0), COALESCE(SUM(balance), 0)
+                FROM payments WHERE service_id = ?
+            """, (sid,))
+            total_paid = payment_info[0] if payment_info else 0
+            parts_total_val = parts_total if parts else 0
+            grand_total_val = service[6] + parts_total_val
+            balance_due = grand_total_val - total_paid
+            
+            pay_frame = tk.Frame(view_win, bg='#f0f0f0', padx=15, pady=10)
+            pay_frame.pack(fill='x', padx=30, pady=5)
+            
+            if total_paid >= grand_total_val and grand_total_val > 0:
+                tk.Label(pay_frame, text=f"PAYMENT STATUS: PAID ({self.CURRENCY} {total_paid:.2f})",
+                        font=("Arial", 12, "bold"), bg='#f0f0f0', fg='#27ae60').pack(side='left')
+            else:
+                tk.Label(pay_frame, text=f"BALANCE DUE: {self.CURRENCY} {balance_due:.2f}",
+                        font=("Arial", 12, "bold"), bg='#f0f0f0', fg='#e74c3c').pack(side='left')
+                tk.Button(pay_frame, text="Record Payment", 
+                         command=lambda: [view_win.destroy(), self.record_payment_for_service(sid)],
+                         bg='#27ae60', fg='white', font=("Arial", 10, "bold"),
+                         cursor='hand2').pack(side='right', padx=5)
+        
+        btn_frame = tk.Frame(view_win)
+        btn_frame.pack(pady=10)
+        
+        tk.Button(btn_frame, text="Print Invoice", command=lambda: self._generate_invoice_pdf(sid),
+                 bg='#9b59b6', fg='white', font=("Arial", 10, "bold"), width=15).pack(side='left', padx=5)
+        tk.Button(btn_frame, text="Close", command=view_win.destroy,
+                 bg='#95a5a6', fg='white', font=("Arial", 10, "bold"), width=15).pack(side='left', padx=5)
     
     def complete_service(self):
         selected = self.service_table.selection()
@@ -1119,25 +1305,83 @@ class GarageApp:
             messagebox.showinfo("Info", "Already completed!")
             return
         
-        if messagebox.askyesno("Confirm", "Mark as completed?"):
+        if messagebox.askyesno("Confirm", "Mark this service as completed?"):
             self.db.execute("UPDATE services SET status='Completed' WHERE id=?", (sid,))
             
-            payment_exists = self.db.fetchone("SELECT id FROM payments WHERE service_id=?", (sid,))
-            if not payment_exists:
-                service = self.db.fetchone("SELECT labour FROM services WHERE id=?", (sid,))
-                parts_total = self.db.fetchone("""
-                    SELECT SUM(qty * price) FROM service_parts WHERE service_id=?
-                """, (sid,))[0] or 0
-                
-                total = service[0] + parts_total
-                
-                self.db.execute("""
-                    INSERT INTO payments VALUES (NULL,?,?,0,?,'Cash',?)
-                """, (sid, total, total, self.today))
+            # Update bike service dates
+            bike_id = self.db.fetchone("SELECT bike_id FROM services WHERE id=?", (sid,))[0]
+            if bike_id:
+                interval = int(self.db.get_setting('service_interval', '180'))
+                next_service = (datetime.now() + timedelta(days=interval)).strftime("%Y-%m-%d")
+                self.db.execute("UPDATE bikes SET last_service_date=?, next_service_date=? WHERE id=?",
+                              (self.today, next_service, bike_id))
             
-            messagebox.showinfo("Success", "Service completed!")
+            # Calculate total for info message
+            service = self.db.fetchone("SELECT labour FROM services WHERE id=?", (sid,))
+            parts_total = self.db.fetchone(
+                "SELECT SUM(qty * price) FROM service_parts WHERE service_id=?", (sid,))[0] or 0
+            total = service[0] + parts_total
+            
+            result = messagebox.askyesno("Service Completed!",
+                f"Service #{sid} marked as completed.\n\n"
+                f"Total Amount: {self.CURRENCY} {total:.2f}\n\n"
+                f"Would you like to print an invoice now?")
+            
+            self.refresh_services_table()
+            self.refresh_payments_table()
+            self.update_dashboard()
+            
+            if result:
+                self._generate_invoice_pdf(sid)
+    
+    def reopen_service(self):
+        """Reopen a completed service back to In Progress"""
+        selected = self.service_table.selection()
+        if not selected:
+            messagebox.showerror("Error", "Select a service!")
+            return
+        
+        sid = self.service_table.item(selected[0])['values'][0]
+        status = self.service_table.item(selected[0])['values'][5]
+        
+        if status != "Completed":
+            messagebox.showinfo("Info", "Only completed services can be reopened.")
+            return
+        
+        if messagebox.askyesno("Confirm", f"Reopen Service #{sid}?\n\nThis will change status back to 'In Progress'."):
+            self.db.execute("UPDATE services SET status='In Progress' WHERE id=?", (sid,))
+            messagebox.showinfo("Success", f"Service #{sid} reopened!")
             self.refresh_services_table()
             self.update_dashboard()
+    
+    def delete_service(self):
+        """Delete a service and its associated records"""
+        selected = self.service_table.selection()
+        if not selected:
+            messagebox.showerror("Error", "Select a service!")
+            return
+        
+        sid = self.service_table.item(selected[0])['values'][0]
+        
+        if not messagebox.askyesno("Confirm Delete", 
+            f"Delete Service #{sid}?\n\nThis will also delete:\n- All parts used in this service\n- All payment records\n- Stock WILL be restored for used parts\n\nThis cannot be undone!"):
+            return
+        
+        # Restore stock for parts used in this service before deleting
+        service_parts = self.db.fetchall("SELECT part_id, qty FROM service_parts WHERE service_id=?", (sid,))
+        for sp in service_parts:
+            if sp[0]:  # part_id might be NULL if part was deleted
+                self.db.execute("UPDATE parts SET quantity = quantity + ? WHERE id=?", (sp[1], sp[0]))
+        
+        # Delete dependent records first
+        self.db.execute("DELETE FROM service_parts WHERE service_id=?", (sid,))
+        self.db.execute("DELETE FROM payments WHERE service_id=?", (sid,))
+        self.db.execute("DELETE FROM services WHERE id=?", (sid,))
+        
+        messagebox.showinfo("Success", f"Service #{sid} deleted!")
+        self.refresh_services_table()
+        self.refresh_payments_table()
+        self.update_dashboard()
     
     def print_service_invoice(self):
         selected = self.service_table.selection()
@@ -1146,21 +1390,42 @@ class GarageApp:
             return
         
         sid = self.service_table.item(selected[0])['values'][0]
-        
+        self._generate_invoice_pdf(sid)
+    
+    def _generate_invoice_pdf(self, sid):
+        """Generate a professional PDF invoice for a service"""
         service = self.db.fetchone("""
-            SELECT s.*, c.name, c.phone, b.bike_number, b.model, b.brand
+            SELECT s.*, COALESCE(c.name, '[Deleted]'), COALESCE(c.phone, ''), 
+                   COALESCE(c.address, ''), COALESCE(b.bike_number, '[Deleted]'), 
+                   COALESCE(b.model, '[Deleted]'), COALESCE(b.brand, '')
             FROM services s
-            JOIN customers c ON s.customer_id = c.id
-            JOIN bikes b ON s.bike_id = b.id
+            LEFT JOIN customers c ON s.customer_id = c.id
+            LEFT JOIN bikes b ON s.bike_id = b.id
             WHERE s.id = ?
         """, (sid,))
+        
+        if not service:
+            messagebox.showerror("Error", "Service not found!")
+            return
         
         parts = self.db.fetchall("""
             SELECT p.name, sp.qty, sp.price, (sp.qty * sp.price) as total
             FROM service_parts sp
-            JOIN parts p ON sp.part_id = p.id
+            LEFT JOIN parts p ON sp.part_id = p.id
             WHERE sp.service_id = ?
         """, (sid,))
+        
+        # Get payment info using subquery (no cartesian product)
+        payment_info = self.db.fetchone("""
+            SELECT COALESCE(SUM(paid), 0), COALESCE(SUM(balance), 0)
+            FROM payments WHERE service_id = ?
+        """, (sid,))
+        total_paid = payment_info[0] if payment_info else 0
+        
+        labour = service[6] if service[6] else 0
+        parts_total = sum(p[3] for p in parts) if parts else 0
+        grand_total = labour + parts_total
+        balance_due = grand_total - total_paid
         
         filename = f"Invoice_{sid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         filepath = os.path.join(os.path.expanduser("~"), "Downloads", filename)
@@ -1168,6 +1433,7 @@ class GarageApp:
         try:
             c = canvas.Canvas(filepath, pagesize=letter)
             width, height = letter
+            currency = self.CURRENCY
             
             # Load garage information from database
             garage_name = self.db.get_setting('garage_name', 'GARAGE SERVICE CENTER')
@@ -1176,7 +1442,6 @@ class GarageApp:
             garage_email = self.db.get_setting('garage_email', '')
             garage_tax = self.db.get_setting('garage_tax_id', '')
             garage_website = self.db.get_setting('garage_website', '')
-            currency = self.db.get_setting('currency_symbol', 'Rs')
             
             # Try to add logo if available
             logo_path = self.db.get_setting('logo_path')
@@ -1184,12 +1449,11 @@ class GarageApp:
             
             if logo_path and os.path.exists(logo_path) and PIL_AVAILABLE:
                 try:
-                    # Draw logo on left side
-                    c.drawImage(logo_path, 45, height - 110, width=90, height=90, 
+                    c.drawImage(logo_path, 45, height - 110, width=90, height=90,
                               preserveAspectRatio=True, mask='auto')
-                    text_start_x = 150  # Move text to right of logo
+                    text_start_x = 150
                 except:
-                    pass  # If logo fails, continue without it
+                    pass
             
             # Header - Garage Name and Info
             c.setFont("Helvetica-Bold", 18)
@@ -1203,140 +1467,187 @@ class GarageApp:
             if garage_website:
                 c.drawString(text_start_x, height - 110, f"Web: {garage_website}")
             
-            # Invoice title and number
-            c.setFont("Helvetica-Bold", 16)
-            c.drawString(width - 180, height - 50, "INVOICE")
+            # Invoice title and number - right aligned
+            c.setFont("Helvetica-Bold", 22)
+            c.setFillColorRGB(0.15, 0.55, 0.82)  # Blue accent
+            c.drawString(width - 200, height - 50, "INVOICE")
+            c.setFillColorRGB(0, 0, 0)
+            
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(width - 200, height - 72, f"#{sid:04d}")
             c.setFont("Helvetica", 10)
-            c.drawString(width - 180, height - 70, f"#{sid}")
-            c.drawString(width - 180, height - 85, f"Date: {service[3]}")
+            c.drawString(width - 200, height - 88, f"Date: {service[3]}")
+            
+            # Payment status badge
+            if balance_due <= 0:
+                status_text = "PAID"
+                c.setFillColorRGB(0.18, 0.8, 0.44)  # Green
+            elif total_paid > 0:
+                status_text = "PARTIAL"
+                c.setFillColorRGB(0.95, 0.61, 0.07)  # Orange
+            else:
+                status_text = "UNPAID"
+                c.setFillColorRGB(0.9, 0.3, 0.24)  # Red
+            c.setFont("Helvetica-Bold", 10)
+            c.drawString(width - 200, height - 105, status_text)
+            c.setFillColorRGB(0, 0, 0)
             
             # Horizontal line
-            c.setStrokeColorRGB(0.2, 0.2, 0.2)
-            c.setLineWidth(1.5)
-            c.line(40, height - 125, width - 40, height - 125)
+            c.setStrokeColorRGB(0.15, 0.55, 0.82)
+            c.setLineWidth(2)
+            c.line(40, height - 120, width - 40, height - 120)
             
-            # Customer Details
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(50, height - 150, "BILL TO:")
+            # Customer Details - left column
+            y_cust = height - 145
+            c.setFont("Helvetica-Bold", 10)
+            c.setFillColorRGB(0.4, 0.4, 0.4)
+            c.drawString(50, y_cust, "BILL TO:")
+            c.setFillColorRGB(0, 0, 0)
             c.setFont("Helvetica", 10)
-            c.drawString(50, height - 170, f"Customer: {service[10]}")
-            c.drawString(50, height - 185, f"Phone: {service[11]}")
+            c.drawString(50, y_cust - 18, f"{service[10]}")
+            if service[11]:
+                c.drawString(50, y_cust - 33, f"Phone: {service[11]}")
+            if len(service) > 12 and service[12]:
+                c.drawString(50, y_cust - 48, f"Address: {service[12]}")
             
-            # Bike Details
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(320, height - 150, "VEHICLE:")
+            # Vehicle Details - right column
+            c.setFont("Helvetica-Bold", 10)
+            c.setFillColorRGB(0.4, 0.4, 0.4)
+            c.drawString(320, y_cust, "VEHICLE:")
+            c.setFillColorRGB(0, 0, 0)
             c.setFont("Helvetica", 10)
-            c.drawString(320, height - 170, f"Number: {service[12]}")
-            c.drawString(320, height - 185, f"Model: {service[14]} {service[13]}")
+            c.drawString(320, y_cust - 18, f"Number: {service[13]}")
+            c.drawString(320, y_cust - 33, f"Model: {service[15]} {service[14]}")
             
             # Service Details
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(50, height - 215, "SERVICE DETAILS:")
+            y_svc = y_cust - 65
+            c.setFont("Helvetica-Bold", 10)
+            c.setFillColorRGB(0.4, 0.4, 0.4)
+            c.drawString(50, y_svc, "SERVICE DETAILS:")
+            c.setFillColorRGB(0, 0, 0)
             c.setFont("Helvetica", 10)
-            c.drawString(50, height - 235, f"Problem: {service[4][:80]}")
-            c.drawString(50, height - 250, f"Mechanic: {service[8]}")
-            c.drawString(50, height - 265, f"Status: {service[7]}")
+            problem_text = service[4][:60] if service[4] else ""
+            # Sanitize for PDF - replace non-latin1 characters
+            problem_text = problem_text.encode('latin-1', 'replace').decode('latin-1')
+            c.drawString(50, y_svc - 18, f"Problem: {problem_text}")
+            if service[8]:
+                c.drawString(50, y_svc - 33, f"Mechanic: {service[8]}")
             
-            # Table header
-            y_pos = height - 305
-            c.setFillColorRGB(0.9, 0.9, 0.9)
-            c.rect(40, y_pos - 2, width - 80, 20, fill=1, stroke=0)
+            # Item Table header
+            y_pos = y_svc - 58
+            c.setFillColorRGB(0.15, 0.55, 0.82)  # Blue header
+            c.rect(40, y_pos - 2, width - 80, 22, fill=1, stroke=0)
+            
+            c.setFillColorRGB(1, 1, 1)  # White text
+            c.setFont("Helvetica-Bold", 10)
+            c.drawString(50, y_pos + 3, "ITEM DESCRIPTION")
+            c.drawString(300, y_pos + 3, "QTY")
+            c.drawString(370, y_pos + 3, "UNIT PRICE")
+            c.drawString(480, y_pos + 3, "AMOUNT")
             
             c.setFillColorRGB(0, 0, 0)
-            c.setFont("Helvetica-Bold", 11)
-            c.drawString(50, y_pos + 5, "Item Description")
-            c.drawString(320, y_pos + 5, "Qty")
-            c.drawString(400, y_pos + 5, "Price")
-            c.drawString(490, y_pos + 5, "Amount")
-            
-            # Items
             y_pos -= 25
             c.setFont("Helvetica", 10)
             
-            # Labour
+            # Labour line
             c.drawString(50, y_pos, "Labour Charges")
-            c.drawString(320, y_pos, "1")
-            c.drawString(400, y_pos, f"{currency} {service[6]:.2f}")
-            c.drawString(490, y_pos, f"{currency} {service[6]:.2f}")
+            c.drawString(300, y_pos, "1")
+            c.drawString(370, y_pos, f"{currency} {labour:.2f}")
+            c.drawString(480, y_pos, f"{currency} {labour:.2f}")
             
-            # Parts
-            parts_total = 0
+            # Parts lines
             for part in parts:
                 y_pos -= 20
-                # Ensure we don't run off the page
                 if y_pos < 150:
                     c.showPage()
                     y_pos = height - 100
-                c.drawString(50, y_pos, part[0][:35])
-                c.drawString(320, y_pos, str(part[1]))
-                c.drawString(400, y_pos, f"{currency} {part[2]:.2f}")
-                c.drawString(490, y_pos, f"{currency} {part[3]:.2f}")
-                parts_total += part[3]
+                part_name = part[0][:30] if part[0] else 'Unknown Part'
+                c.drawString(50, y_pos, part_name)
+                c.drawString(300, y_pos, str(part[1]))
+                c.drawString(370, y_pos, f"{currency} {part[2]:.2f}")
+                c.drawString(480, y_pos, f"{currency} {part[3]:.2f}")
             
-            # Total section
-            y_pos -= 30
-            c.setLineWidth(1)
-            c.line(350, y_pos + 5, width - 40, y_pos + 5)
+            # Totals section
+            y_pos -= 10
+            c.setStrokeColorRGB(0.7, 0.7, 0.7)
+            c.setLineWidth(0.5)
+            c.line(300, y_pos, width - 40, y_pos)
             
-            y_pos -= 20
-            grand_total = service[6] + parts_total
+            # Subtotals
+            y_pos -= 18
+            c.setFont("Helvetica", 10)
+            c.drawString(380, y_pos, "Labour:")
+            c.drawString(480, y_pos, f"{currency} {labour:.2f}")
             
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(400, y_pos, "TOTAL:")
-            c.drawString(490, y_pos, f"{currency} {grand_total:.2f}")
+            y_pos -= 16
+            c.drawString(380, y_pos, "Parts:")
+            c.drawString(480, y_pos, f"{currency} {parts_total:.2f}")
             
-            c.setLineWidth(2)
-            c.line(350, y_pos - 5, width - 40, y_pos - 5)
+            # Grand total
+            y_pos -= 8
+            c.setStrokeColorRGB(0, 0, 0)
+            c.setLineWidth(1.5)
+            c.line(370, y_pos, width - 40, y_pos)
+            
+            y_pos -= 18
+            c.setFont("Helvetica-Bold", 13)
+            c.drawString(380, y_pos, "GRAND TOTAL:")
+            c.drawString(480, y_pos, f"{currency} {grand_total:.2f}")
+            
+            # Payment info section
+            if total_paid > 0 or balance_due > 0:
+                y_pos -= 8
+                c.setStrokeColorRGB(0.7, 0.7, 0.7)
+                c.setLineWidth(0.5)
+                c.line(370, y_pos, width - 40, y_pos)
+                
+                y_pos -= 16
+                c.setFont("Helvetica", 10)
+                c.setFillColorRGB(0.18, 0.8, 0.44)  # Green for paid
+                c.drawString(380, y_pos, "Amount Paid:")
+                c.drawString(480, y_pos, f"{currency} {total_paid:.2f}")
+                
+                y_pos -= 16
+                if balance_due > 0:
+                    c.setFillColorRGB(0.9, 0.3, 0.24)  # Red for balance
+                else:
+                    c.setFillColorRGB(0.18, 0.8, 0.44)  # Green if fully paid
+                c.drawString(380, y_pos, "Balance Due:")
+                c.drawString(480, y_pos, f"{currency} {balance_due:.2f}")
+                c.setFillColorRGB(0, 0, 0)
             
             # Footer
             c.setFont("Helvetica", 8)
-            c.drawString(50, 80, "Thank you for your business!")
-            c.drawString(50, 65, "Please check all items before leaving.")
+            c.setFillColorRGB(0.5, 0.5, 0.5)
+            c.drawString(50, 60, "Thank you for your business!")
+            c.drawString(50, 48, "Please check all items before leaving.")
             
             if garage_tax:
-                c.drawString(50, 50, f"Tax Invoice | {garage_tax}")
+                c.drawString(50, 36, f"Tax Invoice | {garage_tax}")
             
             c.setFont("Helvetica-Bold", 8)
-            c.drawString(width - 200, 50, f"Powered by Garage Management System")
+            c.drawString(width - 250, 36, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+            c.drawString(width - 250, 48, "Powered by Garage Management System")
+            c.setFillColorRGB(0, 0, 0)
             
             c.save()
             
-            messagebox.showinfo("Success", f"✅ Invoice generated successfully!\n\n" +
-                              f"Saved to: Downloads/{filename}\n\n" +
-                              f"Invoice #{sid} | Total: {currency} {grand_total:.2f}")
+            messagebox.showinfo("Invoice Generated",
+                f"Invoice #{sid:04d} saved successfully!\n\n"
+                f"File: Downloads/{filename}\n"
+                f"Total: {currency} {grand_total:.2f}\n"
+                f"Paid: {currency} {total_paid:.2f}\n"
+                f"Balance: {currency} {balance_due:.2f}")
             
             # Try to open the PDF
-            if os.name == 'nt':  # Windows
-                os.startfile(filepath)
-            elif os.name == 'posix':  # macOS and Linux
-                os.system(f'open "{filepath}"' if os.uname().sysname == 'Darwin' else f'xdg-open "{filepath}"')
-                
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not create PDF:\n{str(e)}\n\n" +
-                               "Make sure you have write permission to Downloads folder.")
-            
-            y_pos -= 30
-            c.line(40, y_pos, width - 40, y_pos)
-            y_pos -= 20
-            
-            grand_total = service[6] + parts_total
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(380, y_pos, "TOTAL:")
-            c.drawString(480, y_pos, f"Rs {grand_total}")
-            
-            c.setFont("Helvetica", 9)
-            c.drawString(200, 50, "Thank you for your business!")
-            
-            c.save()
-            
-            messagebox.showinfo("Success", f"Invoice saved:\n{filename}")
-            
             if os.name == 'nt':
                 os.startfile(filepath)
             elif os.name == 'posix':
                 os.system(f'open "{filepath}"' if os.uname().sysname == 'Darwin' else f'xdg-open "{filepath}"')
+                
         except Exception as e:
-            messagebox.showerror("Error", f"Could not create PDF: {str(e)}")
+            messagebox.showerror("Error", f"Could not create PDF:\n{str(e)}\n\n"
+                               "Make sure you have write permission to Downloads folder.")
     
     def refresh_services_table(self):
         for row in self.service_table.get_children():
@@ -1344,38 +1655,44 @@ class GarageApp:
         
         filter_status = self.service_filter.get()
         
+        base_query = """
+            SELECT s.id, s.date, COALESCE(c.name, '[Deleted]'), COALESCE(b.bike_number, '[Deleted]'), 
+                   s.problem, s.status, s.mechanic, s.labour,
+                   COALESCE((SELECT SUM(qty * price) FROM service_parts WHERE service_id = s.id), 0) as parts_total,
+                   (s.labour + COALESCE((SELECT SUM(qty * price) FROM service_parts WHERE service_id = s.id), 0)) as grand_total,
+                   COALESCE((SELECT SUM(paid) FROM payments WHERE service_id = s.id), 0) as total_paid
+            FROM services s
+            LEFT JOIN customers c ON s.customer_id = c.id
+            LEFT JOIN bikes b ON s.bike_id = b.id
+        """
+        
         if filter_status == "All":
-            query = """
-                SELECT s.id, s.date, c.name, b.bike_number, s.problem, s.status, s.mechanic, s.labour,
-                       COALESCE(SUM(sp.qty * sp.price), 0) as parts_total,
-                       (s.labour + COALESCE(SUM(sp.qty * sp.price), 0)) as grand_total
-                FROM services s
-                JOIN customers c ON s.customer_id = c.id
-                JOIN bikes b ON s.bike_id = b.id
-                LEFT JOIN service_parts sp ON s.id = sp.service_id
-                GROUP BY s.id
-                ORDER BY s.date DESC
-            """
+            query = base_query + " ORDER BY s.date DESC"
             rows = self.db.fetchall(query)
         else:
-            query = """
-                SELECT s.id, s.date, c.name, b.bike_number, s.problem, s.status, s.mechanic, s.labour,
-                       COALESCE(SUM(sp.qty * sp.price), 0) as parts_total,
-                       (s.labour + COALESCE(SUM(sp.qty * sp.price), 0)) as grand_total
-                FROM services s
-                JOIN customers c ON s.customer_id = c.id
-                JOIN bikes b ON s.bike_id = b.id
-                LEFT JOIN service_parts sp ON s.id = sp.service_id
-                WHERE s.status = ?
-                GROUP BY s.id
-                ORDER BY s.date DESC
-            """
+            query = base_query + " WHERE s.status = ? ORDER BY s.date DESC"
             rows = self.db.fetchall(query, (filter_status,))
         
         for r in rows:
+            grand_total = r[9]
+            total_paid = r[10]
+            if r[5] != 'Completed':
+                pay_status = "-"
+            elif total_paid >= grand_total and grand_total > 0:
+                pay_status = "Paid"
+            elif total_paid > 0:
+                pay_status = f"Partial"
+            else:
+                pay_status = "Unpaid"
+            
+            # Determine row tag based on service status
+            status_tag = r[5].lower().replace(' ', '_') if r[5] else ''
+            pay_tag = pay_status.lower() if pay_status != '-' else ''
+            
             self.service_table.insert("", tk.END, values=(
-                r[0], r[1], r[2], r[3], r[4][:30], r[5], r[6], f"Rs {r[7]}", f"Rs {r[8]}", f"Rs {r[9]}"
-            ))
+                r[0], r[1], r[2], r[3], r[4][:25], r[5], pay_status, r[6],
+                f"{self.CURRENCY} {r[7]}", f"{self.CURRENCY} {r[8]}", f"{self.CURRENCY} {r[9]}"
+            ), tags=(status_tag, pay_tag))
 
     
     # ========== PAYMENTS TAB ==========
@@ -1384,17 +1701,51 @@ class GarageApp:
         
         header = tk.Frame(tab, bg='#3498db', height=50)
         header.pack(fill='x')
-        tk.Label(header, text="💰 Payment Management", font=("Arial", 16, "bold"),
+        tk.Label(header, text="💰 Payments & Invoices", font=("Arial", 16, "bold"),
                 bg='#3498db', fg='white').pack(pady=10)
         
+        # Action buttons bar
         btn_frame = tk.Frame(tab, bg='#ecf0f1')
         btn_frame.pack(fill='x', padx=20, pady=10)
         
         tk.Button(btn_frame, text="💵 Record Payment", command=self.record_payment,
                  bg='#27ae60', fg='white', font=("Arial", 11, "bold"), cursor='hand2').pack(side='left', padx=5)
+        tk.Button(btn_frame, text="🖨️ Print Invoice", command=self.print_payment_invoice,
+                 bg='#9b59b6', fg='white', font=("Arial", 11, "bold"), cursor='hand2').pack(side='left', padx=5)
+        tk.Button(btn_frame, text="✅ Mark as Paid", command=self.mark_service_paid,
+                 bg='#f39c12', fg='white', font=("Arial", 11, "bold"), cursor='hand2').pack(side='left', padx=5)
         tk.Button(btn_frame, text="🔄 Refresh", command=self.refresh_payments_table,
                  bg='#3498db', fg='white', font=("Arial", 11, "bold"), cursor='hand2').pack(side='left', padx=5)
         
+        # Filter & search bar
+        filter_frame = tk.LabelFrame(tab, text="Filter & Search", font=("Arial", 10, "bold"),
+                                    bg='white', padx=10, pady=8)
+        filter_frame.pack(fill='x', padx=20, pady=5)
+        
+        tk.Label(filter_frame, text="Status:", bg='white', font=("Arial", 10)).grid(row=0, column=0, padx=5)
+        self.payment_filter = ttk.Combobox(filter_frame, values=["All", "Unpaid", "Partial", "Paid"],
+                                          state='readonly', width=12)
+        self.payment_filter.set("All")
+        self.payment_filter.grid(row=0, column=1, padx=5)
+        self.payment_filter.bind('<<ComboboxSelected>>', lambda e: self.refresh_payments_table())
+        
+        tk.Label(filter_frame, text="Search:", bg='white', font=("Arial", 10)).grid(row=0, column=2, padx=5)
+        self.payment_search = tk.Entry(filter_frame, font=("Arial", 10), width=25)
+        self.payment_search.grid(row=0, column=3, padx=5)
+        self.payment_search.bind('<KeyRelease>', lambda e: self.refresh_payments_table())
+        
+        tk.Button(filter_frame, text="Clear", command=self.clear_payment_filter,
+                 bg='#95a5a6', fg='white', font=("Arial", 9)).grid(row=0, column=4, padx=5)
+        
+        # Outstanding summary bar
+        summary_frame = tk.Frame(tab, bg='#fef9e7', relief='raised', bd=1)
+        summary_frame.pack(fill='x', padx=20, pady=5)
+        
+        self.payment_summary_label = tk.Label(summary_frame, text="", font=("Arial", 11),
+                                              bg='#fef9e7', fg='#2c3e50', anchor='w', padx=10, pady=5)
+        self.payment_summary_label.pack(fill='x')
+        
+        # Payments table with color-coded status
         table_frame = tk.Frame(tab, bg='white')
         table_frame.pack(fill='both', expand=True, padx=20, pady=10)
         
@@ -1402,42 +1753,82 @@ class GarageApp:
         scroll_y.pack(side='right', fill='y')
         
         self.payment_table = ttk.Treeview(table_frame,
-            columns=("ID", "Service", "Date", "Customer", "Total", "Paid", "Balance", "Method"),
+            columns=("Svc#", "Date", "Customer", "Vehicle", "Total", "Paid", "Balance", "Status", "Method"),
             show='headings', yscrollcommand=scroll_y.set)
         
         scroll_y.config(command=self.payment_table.yview)
         
+        col_widths = {"Svc#": 50, "Date": 80, "Customer": 120, "Vehicle": 90, 
+                      "Total": 90, "Paid": 90, "Balance": 90, "Status": 70, "Method": 90}
         for col in self.payment_table['columns']:
             self.payment_table.heading(col, text=col)
-            self.payment_table.column(col, width=120)
+            self.payment_table.column(col, width=col_widths.get(col, 90))
+        
+        # Color-coded status rows
+        self.payment_table.tag_configure('paid', background='#d5f5e3')
+        self.payment_table.tag_configure('partial', background='#fdebd0')
+        self.payment_table.tag_configure('unpaid', background='#fadbd8')
         
         self.payment_table.pack(fill='both', expand=True)
         
+        # Double-click to record payment on that service
+        self.payment_table.bind('<Double-1>', self.payment_table_double_click)
+        
         self.refresh_payments_table()
     
+    def clear_payment_filter(self):
+        """Clear payment filter and search"""
+        self.payment_filter.set("All")
+        self.payment_search.delete(0, tk.END)
+        self.refresh_payments_table()
+    
+    def payment_table_double_click(self, event):
+        """Double-click on payment table to quick-pay or view invoice"""
+        selected = self.payment_table.selection()
+        if not selected:
+            return
+        
+        vals = self.payment_table.item(selected[0])['values']
+        status = vals[7]  # Status column
+        
+        if status == "Paid":
+            # Already paid - offer to print invoice
+            if messagebox.askyesno("Invoice", "This service is fully paid.\n\nPrint invoice?"):
+                sid = vals[0]
+                self._generate_invoice_pdf(sid)
+        else:
+            # Has balance - offer to record payment
+            sid = vals[0]
+            balance_str = vals[6]  # Balance column (formatted)
+            if messagebox.askyesno("Record Payment", 
+                f"Service #{sid} - Balance: {balance_str}\n\nRecord a payment?"):
+                self.record_payment_for_service(sid)
+    
     def record_payment(self):
+        # Use subqueries to avoid cartesian product bug
         unpaid = self.db.fetchall("""
-            SELECT s.id, c.name, b.bike_number,
-                   (s.labour + COALESCE(SUM(sp.qty * sp.price), 0)) as total,
-                   COALESCE(p.paid, 0) as paid,
-                   (s.labour + COALESCE(SUM(sp.qty * sp.price), 0) - COALESCE(p.paid, 0)) as balance
+            SELECT s.id, COALESCE(c.name, '[Deleted]'), COALESCE(b.bike_number, '[Deleted]'),
+                   (s.labour + COALESCE((SELECT SUM(qty * price) FROM service_parts WHERE service_id = s.id), 0)) as total,
+                   COALESCE((SELECT SUM(paid) FROM payments WHERE service_id = s.id), 0) as paid,
+                   (s.labour + COALESCE((SELECT SUM(qty * price) FROM service_parts WHERE service_id = s.id), 0) 
+                    - COALESCE((SELECT SUM(paid) FROM payments WHERE service_id = s.id), 0)) as balance
             FROM services s
-            JOIN customers c ON s.customer_id = c.id
-            JOIN bikes b ON s.bike_id = b.id
-            LEFT JOIN service_parts sp ON s.id = sp.service_id
-            LEFT JOIN payments p ON s.id = p.service_id
+            LEFT JOIN customers c ON s.customer_id = c.id
+            LEFT JOIN bikes b ON s.bike_id = b.id
             WHERE s.status = 'Completed'
-            GROUP BY s.id
-            HAVING balance > 0
+            ORDER BY s.date DESC
         """)
         
+        # Filter to only unpaid services (u[5] = balance)
+        unpaid = [u for u in unpaid if u[5] > 0]
+        
         if not unpaid:
-            messagebox.showinfo("Info", "No pending payments!")
+            messagebox.showinfo("Info", "No pending payments!\n\nAll completed services have been paid in full.")
             return
         
         pay_win = tk.Toplevel(self.master)
         pay_win.title("Record Payment")
-        pay_win.geometry("600x400")
+        pay_win.geometry("650x450")
         pay_win.grab_set()
         
         tk.Label(pay_win, text="💰 Record Payment", font=("Arial", 16, "bold"),
@@ -1447,72 +1838,353 @@ class GarageApp:
         form.pack(fill='both', expand=True)
         
         tk.Label(form, text="Select Service", font=("Arial", 11, "bold")).grid(row=0, column=0, sticky='w', pady=10)
-        service_combo = ttk.Combobox(form, font=("Arial", 10), width=40, state='readonly')
-        service_map = {f"Service #{u[0]} - {u[1]} ({u[2]}) - Balance: Rs {u[5]}": u for u in unpaid}
+        service_combo = ttk.Combobox(form, font=("Arial", 10), width=45, state='readonly')
+        service_map = {f"#{u[0]} - {u[1]} ({u[2]}) - Balance: {self.CURRENCY} {u[5]:.2f}": u for u in unpaid}
         service_combo['values'] = list(service_map.keys())
-        service_combo.grid(row=0, column=1, pady=10)
+        service_combo.grid(row=0, column=1, pady=10, padx=10)
         
         tk.Label(form, text="Amount", font=("Arial", 11, "bold")).grid(row=1, column=0, sticky='w', pady=10)
         amount_entry = tk.Entry(form, font=("Arial", 10), width=30)
-        amount_entry.grid(row=1, column=1, pady=10)
+        amount_entry.grid(row=1, column=1, pady=10, padx=10, sticky='w')
         
-        tk.Label(form, text="Method", font=("Arial", 11, "bold")).grid(row=2, column=0, sticky='w', pady=10)
+        # Quick fill buttons
+        quick_frame = tk.Frame(form)
+        quick_frame.grid(row=2, column=1, sticky='w', padx=10)
+        
+        def fill_full_amount():
+            if service_combo.get():
+                info = service_map[service_combo.get()]
+                amount_entry.delete(0, tk.END)
+                amount_entry.insert(0, f"{info[5]:.2f}")
+        
+        def fill_half_amount():
+            if service_combo.get():
+                info = service_map[service_combo.get()]
+                amount_entry.delete(0, tk.END)
+                amount_entry.insert(0, f"{info[5]/2:.2f}")
+        
+        tk.Button(quick_frame, text="Full Amount", command=fill_full_amount,
+                 bg='#27ae60', fg='white', font=("Arial", 9)).pack(side='left', padx=3)
+        tk.Button(quick_frame, text="Half", command=fill_half_amount,
+                 bg='#3498db', fg='white', font=("Arial", 9)).pack(side='left', padx=3)
+        
+        tk.Label(form, text="Method", font=("Arial", 11, "bold")).grid(row=3, column=0, sticky='w', pady=10)
         method_combo = ttk.Combobox(form, font=("Arial", 10), width=28, state='readonly',
                                    values=["Cash", "Card", "UPI", "Bank Transfer"])
         method_combo.set("Cash")
-        method_combo.grid(row=2, column=1, pady=10)
+        method_combo.grid(row=3, column=1, pady=10, sticky='w', padx=10)
         
         def save_payment():
             if not service_combo.get():
                 messagebox.showerror("Error", "Select a service!")
                 return
             
-            service_info = service_map[service_combo.get()]
-            sid = service_info[0]
-            amount = float(amount_entry.get())
-            method = method_combo.get()
-            
-            if amount > service_info[5]:
-                messagebox.showerror("Error", "Amount exceeds balance!")
+            try:
+                amount = float(amount_entry.get())
+            except ValueError:
+                messagebox.showerror("Error", "Enter a valid numeric amount!")
                 return
             
-            existing = self.db.fetchone("SELECT id, paid FROM payments WHERE service_id=?", (sid,))
+            if amount <= 0:
+                messagebox.showerror("Error", "Amount must be greater than zero!")
+                return
             
-            if existing:
-                new_paid = existing[1] + amount
-                new_balance = service_info[3] - new_paid
-                self.db.execute("UPDATE payments SET paid=?, balance=? WHERE id=?",
-                              (new_paid, new_balance, existing[0]))
-            else:
-                new_balance = service_info[3] - amount
-                self.db.execute("""
-                    INSERT INTO payments VALUES (NULL,?,?,?,?,?,?)
-                """, (sid, service_info[3], amount, new_balance, method, self.today))
+            service_info = service_map[service_combo.get()]
+            sid = service_info[0]
+            total = service_info[3]   # Total amount
+            current_paid = service_info[4]  # Previously paid
+            new_total_paid = current_paid + amount
+            method = method_combo.get()
             
-            messagebox.showinfo("Success", f"Payment of Rs {amount} recorded!")
+            if amount > service_info[5] + 0.01:  # service_info[5] = outstanding balance
+                messagebox.showerror("Error", 
+                    f"Amount ({self.CURRENCY} {amount:.2f}) exceeds outstanding balance ({self.CURRENCY} {service_info[5]:.2f})!")
+                return
+            
+            new_balance = total - new_total_paid
+            
+            # Update or create payment record
+            # Always INSERT a new payment row for each payment transaction.
+            # This preserves the full payment history (date, method, amount per payment).
+            # The balance is computed as: total - SUM(all payments for this service).
+            self.db.execute("INSERT INTO payments VALUES (NULL,?,?,?,?,?,?)",
+                          (sid, total, amount, new_balance, method, self.today))
+            
+            # Show result and offer to print invoice
+            result = messagebox.askyesno("Payment Recorded!",
+                f"Payment of {self.CURRENCY} {amount:.2f} recorded via {method}.\n\n"
+                f"Total: {self.CURRENCY} {total:.2f}\n"
+                f"Paid: {self.CURRENCY} {new_total_paid:.2f}\n"
+                f"Balance: {self.CURRENCY} {new_balance:.2f}\n\n"
+                f"{'Fully paid!' if new_balance <= 0 else 'Partial payment recorded.'}\n\n"
+                f"Would you like to print an invoice?")
+            
             pay_win.destroy()
             self.refresh_payments_table()
+            self.refresh_services_table()
             self.update_dashboard()
+            
+            if result:
+                self._generate_invoice_pdf(sid)
         
-        tk.Button(form, text="💾 Save", command=save_payment, bg='#27ae60',
-                 fg='white', font=("Arial", 11, "bold"), width=20).grid(row=3, column=0, columnspan=2, pady=30)
+        tk.Button(form, text="💾 Save Payment", command=save_payment, bg='#27ae60',
+                 fg='white', font=("Arial", 12, "bold"), width=20).grid(row=4, column=0, columnspan=2, pady=20)
+    
+    def record_payment_for_service(self, sid):
+        """Record payment for a specific service ID (called from double-click or quick-pay)"""
+        # Get service details using subqueries
+        service_info = self.db.fetchone("""
+            SELECT s.id, COALESCE(c.name, '[Deleted]'), COALESCE(b.bike_number, '[Deleted]'),
+                   (s.labour + COALESCE((SELECT SUM(qty * price) FROM service_parts WHERE service_id = s.id), 0)) as total,
+                   COALESCE((SELECT SUM(paid) FROM payments WHERE service_id = s.id), 0) as paid,
+                   (s.labour + COALESCE((SELECT SUM(qty * price) FROM service_parts WHERE service_id = s.id), 0) 
+                    - COALESCE((SELECT SUM(paid) FROM payments WHERE service_id = s.id), 0)) as balance
+            FROM services s
+            LEFT JOIN customers c ON s.customer_id = c.id
+            LEFT JOIN bikes b ON s.bike_id = b.id
+            WHERE s.id = ?
+        """, (sid,))
+        
+        if not service_info or service_info[5] <= 0:
+            messagebox.showinfo("Info", "No balance due for this service.")
+            return
+        
+        pay_win = tk.Toplevel(self.master)
+        pay_win.title(f"Record Payment - Service #{sid}")
+        pay_win.geometry("500x380")
+        pay_win.grab_set()
+        
+        tk.Label(pay_win, text=f"💰 Payment for Service #{sid}", font=("Arial", 14, "bold"),
+                bg='#27ae60', fg='white').pack(fill='x', pady=10)
+        
+        form = tk.Frame(pay_win, padx=30, pady=15)
+        form.pack(fill='both', expand=True)
+        
+        # Service info display
+        info_frame = tk.Frame(form, bg='#f0f0f0', padx=10, pady=8)
+        info_frame.grid(row=0, column=0, columnspan=2, sticky='ew', pady=5)
+        
+        tk.Label(info_frame, text=f"Customer: {service_info[1]}", bg='#f0f0f0', font=("Arial", 10)).pack(anchor='w')
+        tk.Label(info_frame, text=f"Vehicle: {service_info[2]}", bg='#f0f0f0', font=("Arial", 10)).pack(anchor='w')
+        tk.Label(info_frame, text=f"Total: {self.CURRENCY} {service_info[3]:.2f}  |  "
+                                 f"Already Paid: {self.CURRENCY} {service_info[4]:.2f}", 
+                bg='#f0f0f0', font=("Arial", 10, "bold")).pack(anchor='w')
+        
+        tk.Label(form, text="Amount*", font=("Arial", 11, "bold")).grid(row=1, column=0, sticky='w', pady=10)
+        amount_entry = tk.Entry(form, font=("Arial", 12), width=25)
+        amount_entry.grid(row=1, column=1, pady=10, padx=10, sticky='w')
+        amount_entry.insert(0, f"{service_info[5]:.2f}")
+        amount_entry.select_range(0, tk.END)
+        amount_entry.focus_set()
+        
+        # Quick fill buttons
+        quick_frame = tk.Frame(form)
+        quick_frame.grid(row=2, column=1, sticky='w', padx=10)
+        
+        def fill_full():
+            amount_entry.delete(0, tk.END)
+            amount_entry.insert(0, f"{service_info[5]:.2f}")
+        
+        def fill_half():
+            amount_entry.delete(0, tk.END)
+            amount_entry.insert(0, f"{service_info[5]/2:.2f}")
+        
+        tk.Button(quick_frame, text="Full", command=fill_full,
+                 bg='#27ae60', fg='white', font=("Arial", 9)).pack(side='left', padx=3)
+        tk.Button(quick_frame, text="Half", command=fill_half,
+                 bg='#3498db', fg='white', font=("Arial", 9)).pack(side='left', padx=3)
+        
+        tk.Label(form, text="Method", font=("Arial", 11, "bold")).grid(row=3, column=0, sticky='w', pady=10)
+        method_combo = ttk.Combobox(form, font=("Arial", 10), width=22, state='readonly',
+                                   values=["Cash", "Card", "UPI", "Bank Transfer"])
+        method_combo.set("Cash")
+        method_combo.grid(row=3, column=1, pady=10, sticky='w', padx=10)
+        
+        def save_payment():
+            try:
+                amount = float(amount_entry.get())
+            except ValueError:
+                messagebox.showerror("Error", "Enter a valid numeric amount!")
+                return
+            
+            if amount <= 0:
+                messagebox.showerror("Error", "Amount must be greater than zero!")
+                return
+            
+            if amount > service_info[5] + 0.01:
+                messagebox.showerror("Error",
+                    f"Amount ({self.CURRENCY} {amount:.2f}) exceeds balance ({self.CURRENCY} {service_info[5]:.2f})!")
+                return
+            
+            total = service_info[3]
+            current_paid = service_info[4]
+            new_total_paid = current_paid + amount
+            new_balance = total - new_total_paid
+            method = method_combo.get()
+            
+            # Always INSERT a new payment row for each payment transaction.
+            # This preserves full payment history (date, method, amount per payment).
+            # The balance is computed as: total - SUM(all payments for this service).
+            self.db.execute("INSERT INTO payments VALUES (NULL,?,?,?,?,?,?)",
+                          (sid, total, amount, new_balance, method, self.today))
+            
+            result = messagebox.askyesno("Payment Recorded!",
+                f"Payment of {self.CURRENCY} {amount:.2f} via {method}.\n\n"
+                f"Total: {self.CURRENCY} {total:.2f}\n"
+                f"Paid: {self.CURRENCY} {new_total_paid:.2f}\n"
+                f"Balance: {self.CURRENCY} {new_balance:.2f}\n\n"
+                f"{'Fully paid!' if new_balance <= 0 else 'Partial payment.'}\n\n"
+                f"Print invoice now?")
+            
+            pay_win.destroy()
+            self.refresh_payments_table()
+            self.refresh_services_table()
+            self.update_dashboard()
+            
+            if result:
+                self._generate_invoice_pdf(sid)
+        
+        tk.Button(form, text="💾 Save Payment", command=save_payment, bg='#27ae60',
+                 fg='white', font=("Arial", 12, "bold"), width=20).grid(row=4, column=0, columnspan=2, pady=15)
     
     def refresh_payments_table(self):
         for row in self.payment_table.get_children():
             self.payment_table.delete(row)
         
+        # Get filter values
+        filter_status = self.payment_filter.get() if hasattr(self, 'payment_filter') else "All"
+        search_text = self.payment_search.get().strip().lower() if hasattr(self, 'payment_search') else ""
+        
+        # Show ALL completed services with their payment status using subqueries
         rows = self.db.fetchall("""
-            SELECT p.id, p.service_id, p.date, c.name, p.total, p.paid, p.balance, p.payment_method
-            FROM payments p
-            JOIN services s ON p.service_id = s.id
-            JOIN customers c ON s.customer_id = c.id
-            ORDER BY p.date DESC
+            SELECT s.id, s.date, COALESCE(c.name, '[Deleted]'), COALESCE(b.bike_number, '[Deleted]'),
+                   (s.labour + COALESCE((SELECT SUM(qty * price) FROM service_parts WHERE service_id = s.id), 0)) as total,
+                   COALESCE((SELECT SUM(paid) FROM payments WHERE service_id = s.id), 0) as paid,
+                   (s.labour + COALESCE((SELECT SUM(qty * price) FROM service_parts WHERE service_id = s.id), 0)
+                    - COALESCE((SELECT SUM(paid) FROM payments WHERE service_id = s.id), 0)) as balance,
+                   COALESCE((SELECT payment_method FROM payments WHERE service_id = s.id ORDER BY id DESC LIMIT 1), '-')
+            FROM services s
+            LEFT JOIN customers c ON s.customer_id = c.id
+            LEFT JOIN bikes b ON s.bike_id = b.id
+            WHERE s.status = 'Completed'
+            ORDER BY s.date DESC
         """)
         
+        total_outstanding = 0
+        total_revenue = 0
+        paid_count = 0
+        unpaid_count = 0
+        
         for r in rows:
+            total = r[4]
+            paid = r[5]
+            balance = r[6]
+            method = r[7]
+            
+            total_revenue += total
+            if balance > 0.01:
+                total_outstanding += balance
+            
+            if paid >= total and total > 0:
+                status = "Paid"
+                paid_count += 1
+            elif paid > 0:
+                status = "Partial"
+                unpaid_count += 1
+            else:
+                status = "Unpaid"
+                unpaid_count += 1
+            
+            # Apply filter
+            if filter_status != "All" and status != filter_status:
+                continue
+            
+            # Apply search
+            if search_text:
+                searchable = f"{r[0]} {r[1]} {r[2]} {r[3]}".lower()
+                if search_text not in searchable:
+                    continue
+            
+            # Determine tag for color coding
+            tag = status.lower()
+            
             self.payment_table.insert("", tk.END, values=(
-                r[0], r[1], r[2], r[3], f"Rs {r[4]}", f"Rs {r[5]}", f"Rs {r[6]}", r[7]
-            ))
+                r[0], r[1], r[2], r[3],
+                f"{self.CURRENCY} {total:.2f}", f"{self.CURRENCY} {paid:.2f}",
+                f"{self.CURRENCY} {balance:.2f}", status, method
+            ), tags=(tag,))
+        
+        # Update summary bar
+        if hasattr(self, 'payment_summary_label'):
+            self.payment_summary_label.config(
+                text=f"Total Revenue: {self.CURRENCY} {total_revenue:,.2f}  |  "
+                     f"Outstanding: {self.CURRENCY} {total_outstanding:,.2f}  |  "
+                     f"Paid: {paid_count} services  |  Unpaid/Partial: {unpaid_count} services  |  "
+                     f"Double-click a row to pay or print")
+    
+    def print_payment_invoice(self):
+        """Print invoice from the Payments tab"""
+        selected = self.payment_table.selection()
+        if not selected:
+            messagebox.showerror("Error", "Select a service from the table to print invoice!")
+            return
+        
+        sid = self.payment_table.item(selected[0])['values'][0]
+        self._generate_invoice_pdf(sid)
+    
+    def mark_service_paid(self):
+        """Quick action: Mark a selected service as fully paid"""
+        selected = self.payment_table.selection()
+        if not selected:
+            messagebox.showerror("Error", "Select a service to mark as paid!")
+            return
+        
+        sid = self.payment_table.item(selected[0])['values'][0]
+        vals = self.payment_table.item(selected[0])['values']
+        status = vals[7]  # Status column
+        
+        if status == "Paid":
+            messagebox.showinfo("Info", "This service is already fully paid!")
+            return
+        
+        balance_str = vals[6]  # Balance column (formatted string)
+        total_str = vals[4]    # Total column (formatted string)
+        
+        if not messagebox.askyesno("Confirm Full Payment",
+            f"Mark Service #{sid} as fully paid?\n\n"
+            f"Total: {total_str}\n"
+            f"Balance: {balance_str}"):
+            return
+        
+        # Get the actual total using subquery
+        total_info = self.db.fetchone("""
+            SELECT (s.labour + COALESCE((SELECT SUM(qty * price) FROM service_parts WHERE service_id = s.id), 0)),
+                   COALESCE((SELECT SUM(paid) FROM payments WHERE service_id = s.id), 0)
+            FROM services s WHERE s.id = ?
+        """, (sid,))
+        
+        if not total_info:
+            messagebox.showerror("Error", "Service not found!")
+            return
+        
+        total = total_info[0]
+        existing_paid = total_info[1]
+        remaining = total - existing_paid  # Amount still owed
+        
+        # Insert a new payment row for the remaining balance
+        self.db.execute("INSERT INTO payments VALUES (NULL,?,?,?,?,?,?)",
+                      (sid, total, remaining, 0, 'Cash', self.today))
+        
+        result = messagebox.askyesno("Payment Recorded!",
+            f"Service #{sid} marked as fully paid ({self.CURRENCY} {total:.2f}).\n\n"
+            f"Would you like to print an invoice?")
+        
+        self.refresh_payments_table()
+        self.refresh_services_table()
+        self.update_dashboard()
+        
+        if result:
+            self._generate_invoice_pdf(sid)
     
     # ========== EXPENSES TAB ==========
     def build_expenses_tab(self):
@@ -1549,10 +2221,27 @@ class GarageApp:
         btn_frame.grid(row=2, column=0, columnspan=4, pady=15)
         
         for text, cmd, color in [("➕ Add", self.add_expense, '#e74c3c'),
+                                  ("🔄 Update", self.update_expense, '#f39c12'),
                                   ("🗑️ Delete", self.delete_expense, '#95a5a6'),
                                   ("🧹 Clear", self.clear_expense_form, '#34495e')]:
             tk.Button(btn_frame, text=text, command=cmd, bg=color, fg='white',
                      font=("Arial", 10, "bold"), width=15, cursor='hand2').pack(side='left', padx=5)
+        
+        # Search & filter bar for expenses
+        expense_search_frame = tk.Frame(tab, bg='white')
+        expense_search_frame.pack(fill='x', padx=20, pady=2)
+        tk.Label(expense_search_frame, text="Search:", bg='white', font=("Arial", 10)).pack(side='left', padx=5)
+        self.expense_search = tk.Entry(expense_search_frame, font=("Arial", 10), width=25)
+        self.expense_search.pack(side='left', padx=5)
+        self.expense_search.bind('<KeyRelease>', lambda e: self.refresh_expenses_table())
+        tk.Label(expense_search_frame, text="Category:", bg='white', font=("Arial", 10)).pack(side='left', padx=5)
+        self.expense_cat_filter = ttk.Combobox(expense_search_frame, values=["All", "Rent", "Salary", "Parts Purchase", "Utilities", "Maintenance", "Other"],
+                                               state='readonly', width=15)
+        self.expense_cat_filter.set("All")
+        self.expense_cat_filter.pack(side='left', padx=5)
+        self.expense_cat_filter.bind('<<ComboboxSelected>>', lambda e: self.refresh_expenses_table())
+        tk.Button(expense_search_frame, text="Clear", command=lambda: [self.expense_search.delete(0, tk.END), self.expense_cat_filter.set("All"), self.refresh_expenses_table()],
+                 bg='#95a5a6', fg='white', font=("Arial", 9)).pack(side='left', padx=5)
         
         table_frame = tk.Frame(tab, bg='white')
         table_frame.pack(fill='both', expand=True, padx=20, pady=10)
@@ -1571,6 +2260,7 @@ class GarageApp:
             self.expense_table.column(col, width=120)
         
         self.expense_table.pack(fill='both', expand=True)
+        self.expense_table.bind('<Double-1>', self.load_expense_data)
         
         self.refresh_expenses_table()
     
@@ -1602,8 +2292,48 @@ class GarageApp:
             eid = self.expense_table.item(selected[0])['values'][0]
             self.db.execute("DELETE FROM expenses WHERE id=?", (eid,))
             messagebox.showinfo("Success", "Expense deleted!")
+            self.clear_expense_form()
             self.refresh_expenses_table()
             self.update_dashboard()
+    
+    def update_expense(self):
+        selected = self.expense_table.selection()
+        if not selected:
+            messagebox.showerror("Error", "Select an expense to update!")
+            return
+        
+        eid = self.expense_table.item(selected[0])['values'][0]
+        desc, cat = self.e_desc.get().strip(), self.e_category.get().strip()
+        amount, date = self.e_amount.get().strip(), self.e_date.get().strip()
+        
+        if not desc or not cat or not amount:
+            messagebox.showerror("Error", "Description, Category, and Amount are required!")
+            return
+        
+        try:
+            self.db.execute("UPDATE expenses SET description=?, category=?, amount=?, date=? WHERE id=?",
+                           (desc, cat, float(amount), date, eid))
+            messagebox.showinfo("Success", "Expense updated!")
+            self.clear_expense_form()
+            self.refresh_expenses_table()
+            self.update_dashboard()
+        except ValueError:
+            messagebox.showerror("Error", "Invalid amount!")
+    
+    def load_expense_data(self, event):
+        """Load selected expense data into the form for editing"""
+        selected = self.expense_table.selection()
+        if selected:
+            vals = self.expense_table.item(selected[0])['values']
+            self.e_desc.delete(0, tk.END)
+            self.e_desc.insert(0, vals[3])       # Description
+            self.e_category.set(vals[2])           # Category
+            self.e_amount.delete(0, tk.END)
+            # Remove currency symbol from amount for editing
+            amount_str = str(vals[4]).replace(self.CURRENCY, '').strip()
+            self.e_amount.insert(0, amount_str)
+            self.e_date.delete(0, tk.END)
+            self.e_date.insert(0, vals[1])         # Date
     
     def clear_expense_form(self):
         self.e_desc.delete(0, tk.END)
@@ -1616,9 +2346,18 @@ class GarageApp:
         for row in self.expense_table.get_children():
             self.expense_table.delete(row)
         
+        search = self.expense_search.get().strip().lower() if hasattr(self, 'expense_search') else ""
+        cat_filter = self.expense_cat_filter.get() if hasattr(self, 'expense_cat_filter') else "All"
+        
         rows = self.db.fetchall("SELECT * FROM expenses ORDER BY date DESC")
         for r in rows:
-            self.expense_table.insert("", tk.END, values=(r[0], r[4], r[2], r[1], f"Rs {r[3]}", r[5]))
+            # Apply category filter
+            if cat_filter != "All" and r[2] != cat_filter:
+                continue
+            # Apply search filter
+            if search and search not in f"{r[1]} {r[2]} {r[3]} {r[4]} {r[5]}".lower():
+                continue
+            self.expense_table.insert("", tk.END, values=(r[0], r[4], r[2], r[1], f"{self.CURRENCY} {r[3]}", r[5]))
     
     # ========== REPORTS TAB ==========
     def build_reports_tab(self):
@@ -1642,12 +2381,13 @@ class GarageApp:
         report_frame = tk.Frame(tab, bg='white', relief='raised', bd=2)
         report_frame.pack(fill='both', expand=True, padx=20, pady=20)
         
-        self.report_text = tk.Text(report_frame, font=("Courier", 10), wrap='word')
-        self.report_text.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        scroll = tk.Scrollbar(report_frame, command=self.report_text.yview)
+        scroll = tk.Scrollbar(report_frame)
         scroll.pack(side='right', fill='y')
-        self.report_text.config(yscrollcommand=scroll.set)
+        
+        self.report_text = tk.Text(report_frame, font=("Courier", 10), wrap='word',
+                                   yscrollcommand=scroll.set)
+        self.report_text.pack(fill='both', expand=True, padx=10, pady=10)
+        scroll.config(command=self.report_text.yview)
     
     def show_monthly_revenue(self):
         self.report_text.delete(1.0, tk.END)
@@ -1669,11 +2409,11 @@ class GarageApp:
         self.report_text.insert(tk.END, "-"*50 + "\n")
         
         for m in monthly:
-            self.report_text.insert(tk.END, f"{m[0]:<15} {m[1]:<15} Rs {m[2]:>15,.2f}\n")
+            self.report_text.insert(tk.END, f"{m[0]:<15} {m[1]:<15} {self.CURRENCY} {m[2]:>15,.2f}\n")
         
         total_revenue = sum(m[2] for m in monthly)
         self.report_text.insert(tk.END, "\n" + "-"*50 + "\n")
-        self.report_text.insert(tk.END, f"{'TOTAL':<30} Rs {total_revenue:>15,.2f}\n")
+        self.report_text.insert(tk.END, f"{'TOTAL':<30} {self.CURRENCY} {total_revenue:>15,.2f}\n")
     
     def show_services_report(self):
         self.report_text.delete(1.0, tk.END)
@@ -1690,13 +2430,13 @@ class GarageApp:
         self.report_text.insert(tk.END, "Status Summary:\n")
         self.report_text.insert(tk.END, "-"*50 + "\n")
         for s in status_summary:
-            self.report_text.insert(tk.END, f"{s[0]}: {s[1]} services (Avg Labour: Rs {s[2]:.2f})\n")
+            self.report_text.insert(tk.END, f"{s[0]}: {s[1]} services (Avg Labour: {self.CURRENCY} {s[2]:.2f})\n")
         
         self.report_text.insert(tk.END, "\n\nTop Mechanics by Services:\n")
         self.report_text.insert(tk.END, "-"*50 + "\n")
         
         top_mechanics = self.db.fetchall("""
-            SELECT mechanic, COUNT(*) as total,
+            SELECT COALESCE(mechanic, '[Unassigned]'), COUNT(*) as total,
                    SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed
             FROM services
             GROUP BY mechanic
@@ -1717,17 +2457,17 @@ class GarageApp:
         self.report_text.insert(tk.END, "-"*50 + "\n")
         
         top_parts = self.db.fetchall("""
-            SELECT p.name, SUM(sp.qty) as total_sold,
+            SELECT COALESCE(p.name, '[Deleted]'), SUM(sp.qty) as total_sold,
                    SUM(sp.qty * sp.price) as revenue
             FROM service_parts sp
-            JOIN parts p ON sp.part_id = p.id
+            LEFT JOIN parts p ON sp.part_id = p.id
             GROUP BY p.name
             ORDER BY total_sold DESC
             LIMIT 10
         """)
         
         for part in top_parts:
-            self.report_text.insert(tk.END, f"{part[0]}: {part[1]} units (Rs {part[2]:,.2f})\n")
+            self.report_text.insert(tk.END, f"{part[0]}: {part[1]} units ({self.CURRENCY} {part[2]:,.2f})\n")
         
         self.report_text.insert(tk.END, "\n\nLow Stock Items:\n")
         self.report_text.insert(tk.END, "-"*50 + "\n")
@@ -1760,20 +2500,20 @@ class GarageApp:
         """)
         
         self.report_text.insert(tk.END, "INCOME:\n")
-        self.report_text.insert(tk.END, f"Service Revenue:          Rs {income:>15,.2f}\n\n")
+        self.report_text.insert(tk.END, f"Service Revenue:          {self.CURRENCY} {income:>15,.2f}\n\n")
         
         self.report_text.insert(tk.END, "EXPENSES:\n")
         total_expense = 0
         for exp in expenses_by_cat:
-            self.report_text.insert(tk.END, f"{exp[0]:<20}    Rs {exp[1]:>15,.2f}\n")
+            self.report_text.insert(tk.END, f"{exp[0]:<20}    {self.CURRENCY} {exp[1]:>15,.2f}\n")
             total_expense += exp[1]
         
         self.report_text.insert(tk.END, "-"*50 + "\n")
-        self.report_text.insert(tk.END, f"{'Total Expenses:':<20}    Rs {total_expense:>15,.2f}\n\n")
+        self.report_text.insert(tk.END, f"{'Total Expenses:':<20}    {self.CURRENCY} {total_expense:>15,.2f}\n\n")
         
         profit = income - total_expense
         self.report_text.insert(tk.END, "="*50 + "\n")
-        self.report_text.insert(tk.END, f"{'NET PROFIT:':<20}    Rs {profit:>15,.2f}\n")
+        self.report_text.insert(tk.END, f"{'NET PROFIT:':<20}    {self.CURRENCY} {profit:>15,.2f}\n")
         self.report_text.insert(tk.END, "="*50 + "\n")
     
     # ========== SETTINGS TAB (ADMIN ONLY) ==========
@@ -1969,7 +2709,7 @@ class GarageApp:
         tk.Label(config_frame, text="Default Service Interval (days):", bg='white',
                 font=("Arial", 11)).grid(row=0, column=0, sticky='w', pady=10)
         self.service_interval = tk.Entry(config_frame, font=("Arial", 10), width=20)
-        self.service_interval.insert(0, "180")
+        self.service_interval.insert(0, self.db.get_setting('service_interval', '180'))
         self.service_interval.grid(row=0, column=1, pady=10, padx=10, sticky='w')
         tk.Label(config_frame, text="Days until next service reminder", bg='white',
                 font=("Arial", 9), fg='gray').grid(row=0, column=2, sticky='w', pady=10)
@@ -1978,13 +2718,13 @@ class GarageApp:
         tk.Label(config_frame, text="Currency Symbol:", bg='white',
                 font=("Arial", 11)).grid(row=1, column=0, sticky='w', pady=10)
         self.currency_symbol = tk.Entry(config_frame, font=("Arial", 10), width=20)
-        self.currency_symbol.insert(0, "Rs")
+        self.currency_symbol.insert(0, self.db.get_setting('currency_symbol', 'Rs'))
         self.currency_symbol.grid(row=1, column=1, pady=10, padx=10, sticky='w')
         
         # Auto backup
         tk.Label(config_frame, text="Auto-backup on exit:", bg='white',
                 font=("Arial", 11)).grid(row=2, column=0, sticky='w', pady=10)
-        self.auto_backup = tk.BooleanVar()
+        self.auto_backup = tk.BooleanVar(value=self.db.get_setting('auto_backup', 'False') == 'True')
         tk.Checkbutton(config_frame, text="Enable automatic database backup",
                       variable=self.auto_backup, bg='white',
                       font=("Arial", 10)).grid(row=2, column=1, sticky='w', pady=10)
@@ -1995,14 +2735,14 @@ class GarageApp:
         self.theme_color = ttk.Combobox(config_frame, font=("Arial", 10), width=18,
                                        values=["Blue (Default)", "Green", "Purple", "Dark"],
                                        state='readonly')
-        self.theme_color.set("Blue (Default)")
+        self.theme_color.set(self.db.get_setting('theme_color', 'Blue (Default)'))
         self.theme_color.grid(row=3, column=1, pady=10, padx=10, sticky='w')
         
         # Low stock threshold
         tk.Label(config_frame, text="Default Low Stock Alert:", bg='white',
                 font=("Arial", 11)).grid(row=4, column=0, sticky='w', pady=10)
         self.low_stock_threshold = tk.Entry(config_frame, font=("Arial", 10), width=20)
-        self.low_stock_threshold.insert(0, "5")
+        self.low_stock_threshold.insert(0, self.db.get_setting('low_stock_threshold', '5'))
         self.low_stock_threshold.grid(row=4, column=1, pady=10, padx=10, sticky='w')
         tk.Label(config_frame, text="Alert when stock falls below this number", bg='white',
                 font=("Arial", 9), fg='gray').grid(row=4, column=2, sticky='w', pady=10)
@@ -2013,7 +2753,41 @@ class GarageApp:
                  width=25).grid(row=5, column=0, columnspan=3, pady=30)
     
     def save_config(self):
-        # In a real app, you'd save these to a config file or database
+        """Save system configuration to database"""
+        service_interval = self.service_interval.get().strip()
+        currency = self.currency_symbol.get().strip()
+        low_stock = self.low_stock_threshold.get().strip()
+
+        # Validate numeric fields
+        if service_interval:
+            try:
+                int(service_interval)
+            except ValueError:
+                messagebox.showerror("Error", "Service interval must be a number!")
+                return
+        if low_stock:
+            try:
+                int(low_stock)
+            except ValueError:
+                messagebox.showerror("Error", "Low stock threshold must be a number!")
+                return
+
+        self.db.set_setting('service_interval', service_interval or '180')
+        self.db.set_setting('currency_symbol', currency or 'Rs')
+        self.db.set_setting('auto_backup', str(self.auto_backup.get()))
+        self.db.set_setting('theme_color', self.theme_color.get())
+        self.db.set_setting('low_stock_threshold', low_stock or '5')
+
+        # Update the runtime currency symbol
+        self.CURRENCY = currency or 'Rs'
+
+        # Refresh all tables to reflect currency changes
+        self.update_dashboard()
+        self.refresh_services_table()
+        self.refresh_payments_table()
+        self.refresh_parts_table()
+        self.refresh_expenses_table()
+
         messagebox.showinfo("Success", "Configuration saved!\n\nNote: Some changes may require restart.")
     
     # ===== GARAGE INFO SETTINGS =====
@@ -2298,7 +3072,11 @@ class GarageApp:
         name = self.mech_name.get().strip()
         phone = self.mech_phone.get().strip()
         salary = self.mech_salary.get().strip()
-        commission = self.mech_commission.get().strip() or 5
+        commission = self.mech_commission.get().strip() or '5'
+        
+        if not name or not phone or not salary:
+            messagebox.showerror("Error", "Name, Phone, and Salary are required!")
+            return
         
         try:
             self.db.execute("UPDATE mechanics SET name=?, phone=?, salary=?, commission_rate=? WHERE id=?",
@@ -2528,9 +3306,6 @@ class GarageApp:
                 bg='#ffe5e5', font=("Arial", 9, "bold"), fg='#c0392b').pack()
     
     def create_backup(self):
-        import shutil
-        from datetime import datetime
-        
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_name = f"garage_complete_backup_{timestamp}.db"
         
@@ -2543,20 +3318,27 @@ class GarageApp:
     def clear_table(self, table_name):
         if messagebox.askyesno("Confirm", f"Are you ABSOLUTELY SURE you want to delete all {table_name}?\n\nThis CANNOT be undone!"):
             if messagebox.askyesno("Final Confirmation", "This is your last chance!\n\nProceed with deletion?"):
+                # Clean up dependent records first
+                if table_name == "services":
+                    self.db.execute("DELETE FROM service_parts")
+                    self.db.execute("DELETE FROM payments")
                 self.db.execute(f"DELETE FROM {table_name}")
                 messagebox.showinfo("Done", f"All {table_name} have been deleted.")
                 self.update_dashboard()
+                self.refresh_services_table()
+                self.refresh_payments_table()
+                self.refresh_expenses_table()
     
     def reset_database(self):
         if messagebox.askyesno("⚠️ DANGER", "This will DELETE ALL DATA from the entire database!\n\nAre you ABSOLUTELY SURE?"):
             if messagebox.askyesno("Final Warning", "This is PERMANENT and CANNOT be undone!\n\nType your password to confirm:"):
                 password = simpledialog.askstring("Confirm Password", "Enter your password:", show='*')
                 
-                # Verify password
-                user_pass = self.db.fetchone("SELECT password FROM users WHERE username=?",
-                                            (self.username_entry.get() if hasattr(self, 'username_entry') else 'admin',))[0]
+                # Verify password against current user
+                user_pass = self.db.fetchone("SELECT password FROM users WHERE name=?",
+                                            (self.current_user,))[0]
                 
-                if password == user_pass or password == "admin":  # Fallback
+                if password == user_pass:
                     # Clear all tables
                     tables = ["service_parts", "services", "payments", "expenses", "bikes", "customers", "parts"]
                     for table in tables:
