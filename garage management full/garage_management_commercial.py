@@ -76,7 +76,8 @@ class DBManager:
         
         # Initialize settings
         self.cur.execute("SELECT COUNT(*) FROM system_settings")
-        if self.cur.fetchone()[0] == 0:
+        result = self.cur.fetchone()
+        if result and result[0] == 0:
             default_settings = [
                 ('garage_name', 'Professional Bike Service Center'),
                 ('garage_address', '123 Main Street, City, State - 12345'),
@@ -94,12 +95,14 @@ class DBManager:
         
         # Default data
         self.cur.execute("SELECT COUNT(*) FROM users")
-        if self.cur.fetchone()[0] == 0:
+        result = self.cur.fetchone()
+        if result and result[0] == 0:
             self.cur.execute("INSERT INTO users VALUES (NULL,'admin','admin','OWNER','Admin User')")
             self.cur.execute("INSERT INTO users VALUES (NULL,'staff','staff','STAFF','Staff User')")
         
         self.cur.execute("SELECT COUNT(*) FROM mechanics")
-        if self.cur.fetchone()[0] == 0:
+        result = self.cur.fetchone()
+        if result and result[0] == 0:
             self.cur.execute("INSERT INTO mechanics VALUES (NULL,'Ravi Kumar','9876543210',15000,5)")
             self.cur.execute("INSERT INTO mechanics VALUES (NULL,'Suresh Babu','9876543211',12000,5)")
         
@@ -123,7 +126,7 @@ class DBManager:
         try:
             result = self.fetchone("SELECT value FROM system_settings WHERE key=?", (key,))
             return result[0] if result else default
-        except:
+        except Exception:
             return default
     
     def set_setting(self, key, value):
@@ -138,7 +141,7 @@ class GarageApp:
         self.master.geometry("1400x800")
         try:
             self.master.state('zoomed')
-        except:
+        except Exception:
             pass
         self.db = DBManager()
         self.today = datetime.now().strftime("%Y-%m-%d")
@@ -358,18 +361,24 @@ class GarageApp:
         self.update_dashboard()
     
     def update_dashboard(self):
-        income = self.db.fetchone("SELECT SUM(paid) FROM payments")[0] or 0
-        expenses = self.db.fetchone("SELECT SUM(amount) FROM expenses")[0] or 0
+        result = self.db.fetchone("SELECT SUM(paid) FROM payments")
+        income = result[0] if result and result[0] else 0
+        result = self.db.fetchone("SELECT SUM(amount) FROM expenses")
+        expenses = result[0] if result and result[0] else 0
         profit = income - expenses
-        pending = self.db.fetchone("""
+        result = self.db.fetchone("""
             SELECT SUM(balance) FROM payments 
             WHERE service_id IN (SELECT id FROM services WHERE status='Completed') AND balance > 0
-        """)[0] or 0
+        """)
+        pending = result[0] if result and result[0] else 0
         
         # Today's stats
-        today_income = self.db.fetchone("SELECT COALESCE(SUM(paid),0) FROM payments WHERE date=?", (self.today,))[0]
-        today_services = self.db.fetchone("SELECT COUNT(*) FROM services WHERE date=?", (self.today,))[0]
-        today_expenses = self.db.fetchone("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE date=?", (self.today,))[0]
+        result = self.db.fetchone("SELECT COALESCE(SUM(paid),0) FROM payments WHERE date=?", (self.today,))
+        today_income = result[0] if result else 0
+        result = self.db.fetchone("SELECT COUNT(*) FROM services WHERE date=?", (self.today,))
+        today_services = result[0] if result else 0
+        result = self.db.fetchone("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE date=?", (self.today,))
+        today_expenses = result[0] if result else 0
         
         self.income_label.config(text=f"Total Income\n{self.CURRENCY} {income:,.2f}")
         self.expense_label.config(text=f"Total Expenses\n{self.CURRENCY} {expenses:,.2f}")
@@ -377,10 +386,14 @@ class GarageApp:
         self.pending_label.config(text=f"Outstanding\n{self.CURRENCY} {pending:,.2f}")
         
         # Service count cards
-        pending_count = self.db.fetchone("SELECT COUNT(*) FROM services WHERE status='Pending'")[0]
-        inprogress_count = self.db.fetchone("SELECT COUNT(*) FROM services WHERE status='In Progress'")[0]
-        completed_count = self.db.fetchone("SELECT COUNT(*) FROM services WHERE status='Completed'")[0]
-        customer_count = self.db.fetchone("SELECT COUNT(*) FROM customers")[0]
+        result = self.db.fetchone("SELECT COUNT(*) FROM services WHERE status='Pending'")
+        pending_count = result[0] if result else 0
+        result = self.db.fetchone("SELECT COUNT(*) FROM services WHERE status='In Progress'")
+        inprogress_count = result[0] if result else 0
+        result = self.db.fetchone("SELECT COUNT(*) FROM services WHERE status='Completed'")
+        completed_count = result[0] if result else 0
+        result = self.db.fetchone("SELECT COUNT(*) FROM customers")
+        customer_count = result[0] if result else 0
         
         self.pending_svc_label.config(text=f"Today: {today_services} Services\n{self.CURRENCY} {today_income:,.0f} Income")
         self.inprogress_svc_label.config(text=f"In Progress\n{inprogress_count}")
@@ -825,7 +838,8 @@ class GarageApp:
         selected = self.bike_table.selection()
         if selected:
             vals = self.bike_table.item(selected[0])['values']
-            cid = self.db.fetchone("SELECT customer_id FROM bikes WHERE id=?", (vals[0],))[0]
+            result = self.db.fetchone("SELECT customer_id FROM bikes WHERE id=?", (vals[0],))
+            cid = result[0] if result else None
             for key, val in self.customer_map.items():
                 if val == cid:
                     self.b_customer.set(key)
@@ -1021,7 +1035,11 @@ class GarageApp:
             return
         
         pid = self.part_table.item(selected[0])['values'][0]
-        current_qty = self.db.fetchone("SELECT quantity FROM parts WHERE id=?", (pid,))[0]
+        result = self.db.fetchone("SELECT quantity FROM parts WHERE id=?", (pid,))
+        if not result:
+            messagebox.showerror("Error", "Part not found!")
+            return
+        current_qty = result[0]
         
         add_qty = simpledialog.askinteger("Add Stock", "Enter quantity to add:", minvalue=1)
         if add_qty:
@@ -1446,7 +1464,11 @@ class GarageApp:
             self.db.execute("UPDATE services SET status='Completed' WHERE id=?", (sid,))
             
             # Update bike service dates
-            bike_id = self.db.fetchone("SELECT bike_id FROM services WHERE id=?", (sid,))[0]
+            result = self.db.fetchone("SELECT bike_id FROM services WHERE id=?", (sid,))
+            if not result:
+                messagebox.showerror("Error", "Service not found!")
+                return
+            bike_id = result[0]
             if bike_id:
                 interval = int(self.db.get_setting('service_interval', '180'))
                 next_service = (datetime.now() + timedelta(days=interval)).strftime("%Y-%m-%d")
@@ -1455,8 +1477,12 @@ class GarageApp:
             
             # Calculate total for info message
             service = self.db.fetchone("SELECT labour FROM services WHERE id=?", (sid,))
-            parts_total = self.db.fetchone(
-                "SELECT SUM(qty * price) FROM service_parts WHERE service_id=?", (sid,))[0] or 0
+            if not service:
+                messagebox.showerror("Error", "Service not found!")
+                return
+            parts_result = self.db.fetchone(
+                "SELECT SUM(qty * price) FROM service_parts WHERE service_id=?", (sid,))
+            parts_total = parts_result[0] if parts_result and parts_result[0] else 0
             total = service[0] + parts_total
             
             # Auto-create payment record with full balance due
@@ -1595,7 +1621,7 @@ class GarageApp:
                     c.drawImage(logo_path, 45, height - 110, width=90, height=90,
                               preserveAspectRatio=True, mask='auto')
                     text_start_x = 150
-                except:
+                except Exception:
                     pass
             
             # Header - Garage Name and Info
@@ -2684,7 +2710,8 @@ class GarageApp:
         self.report_text.insert(tk.END, f"PROFIT & LOSS STATEMENT ({from_date} to {to_date})\n".center(80))
         self.report_text.insert(tk.END, "="*80 + "\n\n")
         
-        income = self.db.fetchone("SELECT SUM(paid) FROM payments WHERE date >= ? AND date <= ?", (from_date, to_date))[0] or 0
+        income_result = self.db.fetchone("SELECT SUM(paid) FROM payments WHERE date >= ? AND date <= ?", (from_date, to_date))
+        income = income_result[0] if income_result and income_result[0] else 0
         
         expenses_by_cat = self.db.fetchall("""
             SELECT category, SUM(amount)
@@ -2847,8 +2874,14 @@ class GarageApp:
         user_id = self.users_table.item(selected[0])['values'][0]
         
         # Prevent deleting the last admin
-        admin_count = self.db.fetchone("SELECT COUNT(*) FROM users WHERE role='OWNER'")[0]
-        user_role = self.db.fetchone("SELECT role FROM users WHERE id=?", (user_id,))[0]
+        admin_count_result = self.db.fetchone("SELECT COUNT(*) FROM users WHERE role='OWNER'")
+        admin_count = admin_count_result[0] if admin_count_result else 0
+        
+        user_role_result = self.db.fetchone("SELECT role FROM users WHERE id=?", (user_id,))
+        if not user_role_result:
+            messagebox.showerror("Error", "User not found!")
+            return
+        user_role = user_role_result[0]
         
         if user_role == 'OWNER' and admin_count <= 1:
             messagebox.showerror("Error", "Cannot delete the last OWNER account!")
@@ -3510,6 +3543,13 @@ class GarageApp:
             messagebox.showerror("Error", f"Backup failed: {str(e)}")
     
     def clear_table(self, table_name):
+        # Whitelist of allowed tables for safety
+        ALLOWED_TABLES = ["services", "customers", "bikes", "parts", "payments", "expenses", "mechanics", "suppliers", "users", "service_parts"]
+        
+        if table_name not in ALLOWED_TABLES:
+            messagebox.showerror("Error", f"Invalid table name: {table_name}")
+            return
+            
         if messagebox.askyesno("Confirm", f"Are you ABSOLUTELY SURE you want to delete all {table_name}?\n\nThis CANNOT be undone!"):
             if messagebox.askyesno("Final Confirmation", "This is your last chance!\n\nProceed with deletion?"):
                 # Clean up dependent records first
@@ -3529,13 +3569,17 @@ class GarageApp:
                 password = simpledialog.askstring("Confirm Password", "Enter your password:", show='*')
                 
                 # Verify password against current user
-                user_pass = self.db.fetchone("SELECT password FROM users WHERE name=?",
-                                            (self.current_user,))[0]
+                user_pass_result = self.db.fetchone("SELECT password FROM users WHERE name=?",
+                                            (self.current_user,))
+                if not user_pass_result:
+                    messagebox.showerror("Error", "Current user not found!")
+                    return
+                user_pass = user_pass_result[0]
                 
                 if password == user_pass:
-                    # Clear all tables
-                    tables = ["service_parts", "services", "payments", "expenses", "bikes", "customers", "parts"]
-                    for table in tables:
+                    # Clear all tables - using whitelist for safety
+                    ALLOWED_TABLES = ["service_parts", "services", "payments", "expenses", "bikes", "customers", "parts"]
+                    for table in ALLOWED_TABLES:
                         self.db.execute(f"DELETE FROM {table}")
                     
                     messagebox.showinfo("Complete", "Database has been reset.\n\nAll data deleted.")
@@ -3621,16 +3665,20 @@ class GarageApp:
         stats_text = tk.Text(stats_frame, font=("Courier", 11), wrap='word')
         stats_text.pack(fill='both', expand=True)
         
-        # Gather statistics
-        total_customers = self.db.fetchone("SELECT COUNT(*) FROM customers")[0]
-        total_bikes = self.db.fetchone("SELECT COUNT(*) FROM bikes")[0]
-        total_parts = self.db.fetchone("SELECT COUNT(*) FROM parts")[0]
-        total_services = self.db.fetchone("SELECT COUNT(*) FROM services")[0]
-        total_users = self.db.fetchone("SELECT COUNT(*) FROM users")[0]
-        total_mechanics = self.db.fetchone("SELECT COUNT(*) FROM mechanics")[0]
+        # Gather statistics with None checks
+        def safe_count(query):
+            result = self.db.fetchone(query)
+            return result[0] if result and result[0] else 0
         
-        completed_services = self.db.fetchone("SELECT COUNT(*) FROM services WHERE status='Completed'")[0]
-        pending_services = self.db.fetchone("SELECT COUNT(*) FROM services WHERE status='Pending'")[0]
+        total_customers = safe_count("SELECT COUNT(*) FROM customers")
+        total_bikes = safe_count("SELECT COUNT(*) FROM bikes")
+        total_parts = safe_count("SELECT COUNT(*) FROM parts")
+        total_services = safe_count("SELECT COUNT(*) FROM services")
+        total_users = safe_count("SELECT COUNT(*) FROM users")
+        total_mechanics = safe_count("SELECT COUNT(*) FROM mechanics")
+        
+        completed_services = safe_count("SELECT COUNT(*) FROM services WHERE status='Completed'")
+        pending_services = safe_count("SELECT COUNT(*) FROM services WHERE status='Pending'")
         
         stats_text.insert(tk.END, "="*60 + "\n")
         stats_text.insert(tk.END, "DATABASE STATISTICS\n".center(60))
